@@ -1,0 +1,149 @@
+{% extends "template.html" %}
+
+{% load tags %}
+{% load filters %}
+{% load wrapwith %}
+
+{% block head %}
+  {% include "popup_image.html" %}
+{% endblock %}
+
+{% block ptitle %}Image {{image.id}} : FRAM Archive{% endblock %}
+
+{% block title %}Image {{image.id}}{% endblock %}
+
+{% block content %}
+
+  <div class="text-center">
+    <a href="{% url 'image_full' image.id %}" title="Click for a full-size image" rel="nofollow"><img src="{% url 'image_view' image.id %}" class="img-thumbnail center-block"/></a>
+  </div>
+
+  <div class="text-center">
+    <a href="{% url 'image_full' image.id %}" title="Click for a full-size image" rel="nofollow"><i class="fa fa-expand"></i> Full-size image</a>
+    <span> - </span>
+    <a href="{% url 'image_full' image.id %}?raw=1" title="Click for a raw image" rel="nofollow"><i class="fa fa-file-image-o"></i> Raw image</a>
+    <span> - </span>
+    <a href="{% url 'image_download' image.id %}" title="Click to download original file" rel="nofollow"><i class="fa fa-download"></i> Download FITS</a>
+    <span> - </span>
+    <a href="{% url 'image_download_processed' image.id %}" title="Click to download processed file" rel="nofollow"><i class="fa fa-download"></i> Processed FITS</a>
+    <br>
+    <a href="{% url 'image_bg' image.id %}" title="Click to inspect image background" onClick="return popupImage(event, '{%  url 'image_bg' image.id %}', 'Background', true)" rel="nofollow"><i class="fa fa-map"></i> Background</a>
+    <span> - </span>
+    <a href="{% url 'image_fwhm' image.id %}" title="Click to inspect image FWHM"  onClick="return popupImage(event, '{%  url 'image_fwhm' image.id %}', 'FWHM', true)" rel="nofollow"><i class="fa fa-bullseye"></i> FWHM</a>
+    <span> - </span>
+    <a href="{% url 'image_wcs' image.id %}" title="Click to inspect image WCS" onClick="return popupImage(event, '{%  url 'image_wcs' image.id %}', 'WCS', true)" rel="nofollow"><i class="fa fa-map-marker"></i> WCS</a>
+    <span> - </span>
+    <a href="{% url 'image_filters' image.id %}" title="Click to inspect image filters" onClick="return popupImage(event, '{%  url 'image_filters' image.id %}', 'Filters', true)" rel="nofollow"><i class="fa fa-cubes"></i> Filters</a>
+    <span> - </span>
+    <a href="{% url 'image_zero' image.id %}" title="Click to inspect image ZERO" onClick="return popupImage(event, '{%  url 'image_zero' image.id %}', 'Zero point', true)" rel="nofollow"><i class="fa fa-map-o"></i> Zero point</a>
+  </div>
+
+  <table class="table table-sm table-striped mt-2 mb-4">
+    <tr><td>Id:</td><td>{{image.id}}</td></tr>
+    <tr><td>Filename:</td><td><a href="{% url 'image_download' image.id %}" title="Download FITS" rel="nofollow"><i class="fa fa-download"></i> {{ image.filename }}</a></td></tr>
+
+    {% if dark %}
+      <tr><td>Dark:</td><td><a href="{% url 'image_details' dark.id %}" title="View dark frame" rel="nofollow"><i class="fa fa-file-image-o"></i> {{ dark.filename }}</a></td></tr>
+    {% endif %}
+    {% if bias %}
+      <tr><td>Bias:</td><td><a href="{% url 'image_details' bias.id %}" title="View bias frame" rel="nofollow"><i class="fa fa-file-image-o"></i> {{ bias.filename }}</a></td></tr>
+    {% endif %}
+    {% if dcurrent %}
+      <tr><td>Dark current:</td><td><a href="{% url 'image_details' dcurrent.id %}" title="View dark current frame" rel="nofollow"><i class="fa fa-file-image-o"></i> {{ dcurrent.filename }}</a></td></tr>
+    {% endif %}
+    {% if flat %}
+      <tr><td>Flat:</td><td><a href="{% url 'image_details' flat.id %}" title="View flat frame" rel="nofollow"><i class="fa fa-file-image-o"></i> {{ flat.filename }}</a></td></tr>
+    {% endif %}
+
+    <tr><td>Time:</td><td>{{image.time|date:"Y-m-d H:i:s"}} UT</td></tr>
+
+    <tr><td>Night:</td><td><a href="{% url 'images' %}?night={{ image.night }}" title="All images from this night" rel="nofollow">{{image.night}}</a></td></tr>
+
+    <tr>
+      <td>Site:</td>
+      <td>
+        <a href="{% url 'images' %}?night={{ image.night }}&site={{ image.site }}" title="All images from this night and site" rel="nofollow">{{image.site}}
+      </td>
+    </tr>
+
+    <tr>
+      <td>CCD:</td>
+      <td>
+        <a href="{% url 'images' %}?night={{ image.night }}&site={{ image.site }}&ccd={{ image.ccd }}" title="All images from this night and site and ccd">{{image.ccd}}</a> / <a href="{% url 'images' %}?night={{ image.night }}&site={{ image.site }}&ccd={{ image.ccd }}&serial={{ image.serial }}" title="All images from this night and site and ccd" rel="nofollow">{{ image.serial }}</a>
+      </td>
+    </tr>
+
+    <tr>
+      <td>Type:</td>
+      <td>
+        <a href="{% url 'images' %}?night={{ image.night }}&site={{ image.site }}&ccd={{ image.ccd }}&type={{ image.type }}" title="All images from this night and site and ccd of this type" rel="nofollow">{{ image.type }}
+      </td>
+    </tr>
+
+    <tr>
+      <td>Image size:</td>
+      <td>
+        {{image.width}}x{{image.height}}
+        {% if image.width != image.keywords.NAXIS1 or image.height != image.keywords.NAXIS2 %}
+          ({{ image.keywords.NAXIS1 }}x{{ image.keywords.NAXIS2 }} usable)
+        {% endif %}
+      </td>
+    </tr>
+
+    <tr>
+      <td>Binning:</td>
+      <td>
+        {{image.binning}}
+      </td>
+    </tr>
+
+    <tr>
+      <td>Exposure:</td>
+      <td>{{image.exposure}} s</td>
+    </tr>
+
+    <tr>
+      <td>Filter:</td>
+      <td>
+        <a href="{% url 'images' %}?night={{ image.night }}&site={{ image.site }}&ccd={{ image.ccd }}&filter={{ image.filter }}" title="All images from this night and site and ccd in this filter" rel="nofollow">{{  image.filter }}
+      </td>
+    </tr>
+
+    <tr>
+      <td>Target:</td>
+      <td>
+        <a href="{% url 'images' %}?night={{ image.night }}&site={{ image.site }}&ccd={{ image.ccd }}&target={{ image.target }}" title="All images from this night and site and ccd in this target" rel="nofollow">{{  image.target }}
+          {% if image.keywords.OBJECT %}/ {{ image.keywords.OBJECT }}{% endif %}
+      </td>
+    </tr>
+
+    <tr>
+      <td>RA:</td>
+      <td>{{image.ra}}</td>
+    </tr>
+
+    <tr>
+      <td>Dec:</td>
+      <td>{{image.dec}}</td>
+    </tr>
+
+    {% if image.keywords.TEL_ALT %}
+      <tr>
+        <td>Alt / Az:</td>
+        <td>
+          {{image.keywords.TEL_ALT}} {{image.keywords.TEL_AZ}}
+        </td>
+      </tr>
+    {% endif %}
+
+  </table>
+
+  <!-- Full FITS header -->
+  <div class="mt-2 mb-4">
+    {% wrapwith 'wrapper_card_collapsed.html' with title='Original FITS header' %}
+    <pre><code>{{ header|header_to_string }}</code></pre>
+    {% endwrapwith %}
+  </div>
+
+
+{% endblock %}

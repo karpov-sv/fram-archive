@@ -1,0 +1,139 @@
+{% extends "template.html" %}
+
+{% block ptitle %}Image Cutouts : FRAM Archive{% endblock %}
+
+{% block title %}Image cutouts from FRAM archive{% endblock %}
+
+{% block content %}
+
+<!-- Cutouts -->
+
+{% if message %}
+  <div class="alert alert-warning" role="alert">
+    {{ message }}
+  </div>
+{% endif %}
+
+<form class="form mb-4" role="form" action="{% url 'search_cutouts' %}" method="post">{% csrf_token %}
+  <div class="form-group">
+    <div class="input-group">
+      <div class="input-group-prepend">
+        <span class="input-group-text" id="addon-coords">Position:</span>
+      </div>
+      <input type="text" class="form-control" id="coords" name="coords" placeholder="Coordinates or SIMBAD object name" size=40 aria-label="Coordinates" aria-describedby="addon-coords">
+
+      <div class="input-group-append">
+        <span class="input-group-text" id="addon-sr">Radius:</span>
+      </div>
+      <div class="input-group-append">
+        <input type="text" class="form-control" name="sr_value" placeholder="Radius" size=15 value="{% if sr_value %}{{ sr_value }}{% else %}10{% endif %}" aria-label="Radius" aria-describedby="addon-sr">
+      </div>
+      <div class="input-group-append">
+        <select class="custom-select" name="sr_units" title="Units"  aria-label="Units">
+          <option value="arcsec" {% if sr_units == 'arcsec' %}selected{% endif %}>Arcsec</option>
+          <option value="arcmin" {% if sr_units == 'arcmin' or not sr_units %}selected{% endif %}>Arcmin</option>
+          <option value="deg" {% if sr_units == 'deg' %}selected{% endif %}>Deg</option>
+        </select>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="form-group">
+    <div class="input-group">
+      <!-- Site -->
+      <div class="input-group-prepend">
+        <span class="input-group-text" id="addon-site">Site:</span>
+      </div>
+
+      <select class="custom-select" name="site" title="Telescope site"  aria-label="Site" aria-describedby="addon-site">
+        <option value="all">All</option>
+        {% for site in sites %}
+          <option value="{{ site.site }}">{{ site.site }}</option>
+        {% endfor %}
+      </select>
+
+      <!-- CCD -->
+      <div class="input-group-prepend">
+        <span class="input-group-text" id="addon-ccd">CCD:</span>
+      </div>
+
+      <select class="custom-select" name="ccd" title="Telescope CCD"  aria-label="CCD" aria-describedby="addon-ccd">
+        <option value="all">All</option>
+        {% for ccd in ccds %}
+          <option value="{{ ccd.ccd }}">{{ ccd.ccd }}</option>
+        {% endfor %}
+      </select>
+
+      <!-- Serial -->
+      <div class="input-group-prepend">
+        <span class="input-group-text" id="addon-serial">Serial:</span>
+      </div>
+
+      <select class="custom-select" name="serial" title="CCD Serial"  aria-label="serial" aria-describedby="addon-serial">
+        <option value="all">All</option>
+        {% for serial in serials %}
+          <option value="{{ serial.serial }}">{{ serial.serial }}</option>
+        {% endfor %}
+      </select>
+
+      <!-- Filter -->
+      <div class="input-group-prepend">
+        <span class="input-group-text" id="addon-filter">Filter:</span>
+      </div>
+
+      <select class="custom-select" name="filter" title="Telescope filter"  aria-label="Filter" aria-describedby="addon-filter">
+        <option value="all">All</option>
+        {% for filter in filters %}
+          <option value="{{ filter.filter }}">{{ filter.filter }}</option>
+        {% endfor %}
+      </select>
+
+      <!-- Target -->
+      <div class="input-group-prepend">
+        <span class="input-group-text" id="addon-target">Target:</span>
+      </div>
+
+      <input type="text" class="form-control" id="target" name="target" placeholder="Target ID" size=20 aria-label="Target" aria-describedby="addon-target">
+
+    </div>
+
+  </div>
+
+  <div class="form-group row">
+
+    <!-- Nights -->
+    <div class="input-group col-sm">
+      <input type="text" class="form-control" id="night1" name="night1" placeholder="YYYYMMDD" size=20 aria-label="Night" aria-describedby="addon-night1">
+
+      <div class="input-group-append">
+        <span class="input-group-text" id="addon-sr"> <= Night <= </span>
+      </div>
+
+      <input type="text" class="form-control" id="night2" name="night2" placeholder="YYYYMMDD" size=20 aria-label="Night" aria-describedby="addon-night2">
+
+    </div>
+
+    <!-- Max distance -->
+    <div class="input-group col-sm">
+      <div class="input-group-prepend">
+        <span class="input-group-text" id="addon-target">Max Dist:</span>
+      </div>
+
+      <input type="text" class="form-control" id="maxdist" name="maxdist" placeholder="Distance from frame center, degrees" size=20 aria-label="MaxDist" aria-describedby="addon-maxdist">
+    </div>
+
+  </div>
+
+  <!-- Buttons -->
+  <div class="input-group">
+    <button type="submit" class="btn btn-secondary">Search</button>
+  </div>
+
+  <div class="form-text text-muted">
+    It will return cutouts of all object images containing the specified sky point, with the size defined by the search radius.<br>
+    <i>Max Dist</i> parameter defines the maximal acceptable distance from frame center, and may be useful to skip the images where cutout center is in the frame corners where distortions are significant.
+  </div>
+</form>
+
+{% endblock %}

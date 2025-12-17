@@ -1,0 +1,86 @@
+{% extends "template.html" %}
+
+{% load el_pagination_tags %}
+{% load filters %}
+
+{% block ptitle %}Image Cutouts : FRAM Archive {% endblock %}
+
+{% block title_div %}
+  <h1>
+    {{ request.GET.sr }}</b> deg around {{ request.GET.ra }} {{request.GET.dec }}: {{ images|qs_length}} images
+  </h1>
+
+{% endblock %}
+
+{% block content %}
+
+<div class="pull-right">
+  {% if request.GET.singlepage %}
+    <a href="?{{ request.GET|GET_remove:"singlepage"|GET_urlencode }}" title="Show pagination" rel="nofollow">Multi-page</a>
+  {% else %}
+    <a href="?{{ request.GET|GET_append:"singlepage"|GET_urlencode }}" title="Show all images on single page" rel="nofollow">Single-page</a>
+  {% endif %}
+
+</div>
+
+{% include 'images_filter.html' %}
+
+{% if not request.GET.singlepage %}
+{% paginate 20 images %}
+{% endif %}
+  <table class="table table-striped table-sm">
+    <tr>
+      <th>Id</th>
+      <th>Time, UT</th>
+      <th>Night</th>
+      <th>Site</th>
+      <th>CCD</th>
+      <th>Filter</th>
+      <th>Exposure</th>
+      <th>Target</th>
+      <th>Dist</th>
+      <th>Preview</th>
+      <th></th>
+    </tr>
+    {% for image in images %}
+      <tr>
+        <td><a href="{% url 'image_details' image.id %}" title="View image details" rel="nofollow"><i class="fa fa-file-image-o"></i> {{ image.id }}</a></td>
+        <td>{{ image.time|date:"Y-m-d H:i:s" }}</td>
+
+        {% with text="night="|addstr:image.night %}
+          <td><a href="?{{ request.GET|GET_remove:"night"|GET_remove:"night1"|GET_remove:"night2"|GET_append:text|GET_urlencode }}" rel="nofollow">{{ image.night }}</a></td>
+        {% endwith %}
+
+        {% with text="site="|addstr:image.site %}
+          <td><a href="?{{ request.GET|GET_remove:"site"|GET_append:text|GET_urlencode }}" rel="nofollow">{{ image.site }}</a></td>
+        {% endwith %}
+
+        <td>{{ image.ccd }} / {{ image.serial }}</td>
+
+        {% with text="filter="|addstr:image.filter %}
+          <td><a href="?{{ request.GET|GET_remove:"filter"|GET_append:text|GET_urlencode }}" rel="nofollow">{{ image.filter }}</a></td>
+        {% endwith %}
+
+        <td>{{ image.exposure }}</td>
+
+        {% with text="target="|addstr:image.target %}
+          <td><a href="?{{ request.GET|GET_remove:"target"|GET_append:text|GET_urlencode }}" rel="nofollow">{{ image.target }}</a></td>
+        {% endwith %}
+
+        <td title="Distance from frame center">{{ image.dist|floatformat:2 }}</td>
+
+        <td><a href="{% url 'image_cutout' image.id %}?ra={{ request.GET.ra }}&dec={{ request.GET.dec }}&sr={{ request.GET.sr }}" title="View image" rel="nofollow">
+          <img src="{% url 'image_cutout_preview' image.id %}?ra={{ request.GET.ra }}&dec={{ request.GET.dec }}&sr={{ request.GET.sr }}" class="img-thumbnail">
+        </a></td>
+
+        <td><a href="{% url 'image_cutout_download' image.id %}?ra={{ request.GET.ra }}&dec={{ request.GET.dec }}&sr={{ request.GET.sr }}" title="Download FITS" rel="nofollow"><i class="fa fa-download"></i> </a></td>
+
+      </tr>
+    {% endfor %}
+  </table>
+
+{% if not request.GET.singlepage %}
+  {% show_pages %}
+{% endif %}
+
+{% endblock %}

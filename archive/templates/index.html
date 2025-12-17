@@ -1,0 +1,83 @@
+{% extends "template.html" %}
+
+{% load tags %}
+{% load static %}
+
+{% block ptitle %}FRAM Archive{% endblock %}
+
+{% block title %}FRAM data archive{% endblock %}
+
+{% block content %}
+
+  <p>
+    <span class="lead">FRAM (F/(Ph)otometric Robotic Atmospheric Monitor)</span> is a series of small robotic telescopes primarily designed for a continuous atmospheric monitoring of astronomical sites in order to measure atmospheric transparency is required with high spatial or temporal resolution. The original FRAM has been operated at the Pierre Auger Observatory in Argentina for more than a decade, while three more FRAMs are foreseen to be used by the Cherenkov Telescope Array (CTA). Two of FRAM sites are equipped, in addition to a primary wide-field teleophoto lens, with a larger diameter traditional telescopes intended for a follow-up and monitoring observations of a wide range of transient objects (gamma-ray bursts, variable stars, comets, etc).
+  </p>
+
+  <div class="card-group mb-4">
+    {% for site in sites %}
+      <div class="card">
+        <!-- <img class="card-img-top" src="https://pc048b.fzu.cz/fram/webcam/{{ site.site }}.jpg"/> -->
+        <img class="card-img-top" src="{% static site.site|add:'.jpg' %}"/>
+        <div class="card-body">
+          <h5 class="card-title">{{ site.site|upper }}</h5>
+
+          <p class="card-text">
+            <a href="{% url 'images' %}?site={{ site.site }}" rel="nofollow">{{ site.count }}</a> images
+            <br>
+            First Night: <a href="{% url 'images' %}?site={{ site.site }}&night={{ site.first }}" rel="nofollow">{{ site.first }}</a>
+            <br>
+            Latest Data: <a href="{% url 'images' %}?site={{ site.site }}&night={{ site.last }}" rel="nofollow">{{ site.last }}</a>
+          </p>
+
+        </div>
+      </div>
+    {% endfor %}
+    </div>
+
+    <h4>Our telescopes</h4>
+    <ul>
+      <li>
+        <span class="lead">FRAM-Auger</span> is a 30 cm f/6.8 telescope located at Pierre Auger observatory, Malargue, Argentina. Telescope is equipped with B, V, R and I filters, and has a field of view of 60’x60’, with pixel scale of 0.92’’/pix. Also, there is a wide-field camera based on a Nikkor 300/2.8 lens and G4-16000 CCD, providing 7x7 degrees field of view with 6’’/pix pixel scale. The camera is equipped with B, V, R, and I filters.
+      </li>
+
+      <li>
+        <span class="lead">FRAM-CTA-N</span> is a 25 cm f/6.3 telescope located at Observatorio del Roque de los Muchachos, La Palma, Spain. Telescope is equipped with B, V, R and z filters, with 26’x26’ field of view and 1.52’’/pix pixel scale. Also, there is a wide-field camera based on a Zeiss 135/2.0 lens and a G4-16000 CCD, providing 15x15 deg fields of view with 14.1’’/pix pixel scale, and equipped with B, V, R, and I filters.
+      </li>
+
+      <li>
+        <span class="lead">FRAM-CTA-S0</span> and <span class="lead">FRAM-CTA-1</span> are twin wide-field cameras installed at Paranal Observatory, Chile. They are based on a Zeiss 135/2.0 lenses and a G4-16000 CCDs, providing 15x15 deg fields of view with 14.1’’/pix pixel scale, and are equipped with B, V, R, and I filters.
+      </li>
+    </ul>
+
+    <h4>Our team</h4>
+    <p>
+      Michael Prouza, Jan Ebr, Petr Janeček, Martin Mašek, Ronan Cunniffe, Sergey Karpov (Institute of Physics, Czech Academy of Sciences)
+      <br>
+      Martin Jelinek (Astronomical Institute of Czech Academy of Sciences)
+    </p>
+    <p>
+      The archive is maintained by <a href="https://ceico.cz/team/researchers/sergey-karpov">Sergey Karpov</a>.
+    </p>
+
+    <h4>Funding</h4>
+    <p>
+    FRAM is maintained by Institute of Physics, Czech Academy of Sciences, and is funded by Ministry of Education, Youth and Sports of the Czech Republic
+    </p>
+
+    <h4>References</h4>
+
+    <ul>
+      <li>
+        Janeček, Petr; Ebr, Jan; Juryšek, Jakub; Prouza, Michael; Blažek, Jiří; Trávníček, Petr; Mandát, Dušan; Pech, Miroslav; Karpov, Sergey; Cunniffe, Ronan; Mašek, Martin; Jelínek, Martin; Ebrová, Ivana. "FRAM telescopes and their measurements of aerosol content at the Pierre Auger Observatory and at future sites of the Cherenkov Telescope Array", Atmospheric Monitoring for High Energy Astroparticle Detectors, Anacapri, Italy, Edited by Valore, L.; Colalillo, R.; Guarino, F.; EPJ Web of Conferences, Volume 197, id.02008
+      </li>
+
+      <li>
+        Ebr, J.; Janeček, P.; Prouza, M.; Kubánek, P.; Jelínek, M.; Mašek, M.; Ebrová, I.; Černý, J. "FRAM: showers, comets, GRBs and popular science", Revista Mexicana de Astronomía y Astrofísica (Serie de Conferencias) Vol. 45, pp. 114--117 (2014)
+      </li>
+
+      <li>
+        Prouza, Michael; Jelínek, Martin; Kubánek, Petr; Ebr, Jan; Trávníček, Petr; Šmída, Radomír "FRAM—The Robotic Telescope for the Monitoring of the Wavelength Dependence of the Extinction: Description of Hardware, Data Analysis, and Results", Advances in Astronomy, 2010, article id. 849382
+      </li>
+    </ul>
+
+{% endblock %}

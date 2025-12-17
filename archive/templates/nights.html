@@ -1,0 +1,50 @@
+{% extends "template.html" %}
+
+{% load el_pagination_tags %}
+{% load filters %}
+
+{% block ptitle %}Nights : FRAM Archive {% endblock %}
+
+{% block title %}
+Nights
+{% endblock %}
+
+{% block content %}
+
+  <div class="row">
+
+    {% if sites %}
+      <nav class="mr-2">
+        <ul class="pagination pagination-dark pagination-sm pagination-dark justify-content-center">
+          <li class="page-item disabled"><span class="page-link">Sites:</span></li>
+          {% for site in sites %}
+            {% with text="site="|add:site.site %}
+              <li class="page-item {% if request.GET.site == site.site %}active{% endif %}"><a class="page-link" href="?{{ request.GET|GET_remove:"site"|GET_append:text|GET_urlencode }}" rel="nofollow">{{ site.site }}</a></li>
+            {% endwith %}
+          {% endfor %}
+          <li class="page-item  {% if not request.GET.site %}active{% endif %}"><a class="page-link" href="?{{ request.GET|GET_remove:"site"|GET_urlencode }}" rel="nofollow">All</a></li>
+        </ul>
+      </nav>
+    {% endif %}
+
+  </div>
+
+{% paginate 200 nights %}
+  <table class="table table-striped table-sm">
+    <tr>
+      <th>Night</th>
+      <th>Site</th>
+      <th>Number of images</th>
+    </tr>
+    {% for night in nights %}
+      <tr>
+        <td><a href="{% url 'images' %}?night={{ night.night }}" title="All images from this night" rel="nofollow"><i class="fa fa-list"></i> {{ night.night }}</a></td>
+        <td><a href="{% url 'nights' %}?site={{ night.site }}" title="This site only" rel="nofollow">{{ night.site }}</a></td>
+        <td><a href="{% url 'images' %}?night={{ night.night }}&site={{ night.site }}" title="Images from this site and night" rel="nofollow">{{ night.count }}</a></td>
+      </tr>
+    {% endfor %}
+  </table>
+
+{% show_pages %}
+
+{% endblock %}

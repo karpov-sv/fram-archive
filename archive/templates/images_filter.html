@@ -1,0 +1,138 @@
+{% load filters %}
+
+<div class="row justify-content-center">
+
+  {% if sites %}
+    <nav class="mr-2 col-md-auto">
+      <ul class="pagination pagination-sm justify-content-center">
+        <li class="page-item disabled"><span class="page-link">Sites:</span></li>
+        {% for site in sites %}
+          {% with text="site="|add:site.site %}
+            <li class="page-item {% if request.GET.site == site.site %}active{% endif %}"><a class="page-link" href="?{{ request.GET|GET_remove:"site"|GET_append:text|GET_urlencode }}" rel="nofollow">{{ site.site }}</a></li>
+          {% endwith %}
+        {% endfor %}
+        <li class="page-item  {% if not request.GET.site %}active{% endif %}"><a class="page-link" href="?{{ request.GET|GET_remove:"site"|GET_urlencode }}" rel="nofollow">All</a></li>
+      </ul>
+    </nav>
+  {% endif %}
+
+  {% if ccds %}
+    <nav class="mr-2 col-md-auto">
+      <ul class="pagination pagination-sm justify-content-center">
+        <li class="page-item disabled"><span class="page-link">CCDs:</span></li>
+        {% for ccd in ccds %}
+          {% with text="ccd="|add:ccd.ccd %}
+            <li class="page-item {% if request.GET.ccd == ccd.ccd %}active{% endif %}"><a class="page-link" href="?{{ request.GET|GET_remove:"ccd"|GET_append:text|GET_urlencode }}" rel="nofollow">{{ ccd.ccd }}</a></li>
+          {% endwith %}
+        {% endfor %}
+        <li class="page-item  {% if not request.GET.ccd %}active{% endif %}"><a class="page-link" href="?{{ request.GET|GET_remove:"ccd"|GET_urlencode }}" rel="nofollow">All</a></li>
+      </ul>
+    </nav>
+  {% endif %}
+
+  {% if request.GET.serial %}
+    <span>
+      <nav class="mr-2 col-md-auto">
+        <ul class="pagination pagination-sm justify-content-center">
+          <li class="page-item disabled"><span class="page-link">Serial:</span></li>
+          <li class="page-item active"><span class="page-link">{{ request.GET.serial }}</span></li>
+          <li class="page-item"><a class="page-link" href="?{{ request.GET|GET_remove:"serial"|GET_urlencode }}" rel="nofollow"><i class="fa fa-close"></i></a></li>
+        </ul>
+      </nav>
+    </span>
+  {% endif %}
+
+  {% if filters %}
+    <nav class="mr-2 col-md-auto">
+      <ul class="pagination pagination-sm justify-content-center">
+        <li class="page-item disabled"><span class="page-link">Filters:</span></li>
+        {% for filter in filters %}
+          {% with text="filter="|add:filter.filter %}
+            <li class="page-item {% if request.GET.filter == filter.filter %}active{% endif %}"><a class="page-link" href="?{{ request.GET|GET_remove:"filter"|GET_append:text|GET_urlencode }}" rel="nofollow">{{ filter.filter }}</a></li>
+          {% endwith %}
+        {% endfor %}
+        <li class="page-item  {% if not request.GET.filter %}active{% endif %}"><a class="page-link" href="?{{ request.GET|GET_remove:"filter"|GET_urlencode }}" rel="nofollow">All</a></li>
+      </ul>
+    </nav>
+  {% endif %}
+
+  {% if types %}
+    <nav class="mr-2 col-md-auto">
+      <ul class="pagination pagination-sm justify-content-center">
+        <li class="page-item disabled"><span class="page-link">Types:</span></li>
+        {% for type in types %}
+          {% with text="type="|add:type.type %}
+            <li class="page-item {% if request.GET.type == type.type %}active{% endif %}"><a class="page-link" href="?{{ request.GET|GET_remove:"type"|GET_append:text|GET_urlencode }}" rel="nofollow">{{ type.type }}</a></li>
+          {% endwith %}
+        {% endfor %}
+        <li class="page-item  {% if not request.GET.type %}active{% endif %}"><a class="page-link" href="?{{ request.GET|GET_remove:"type"|GET_urlencode }}" rel="nofollow">All</a></li>
+      </ul>
+    </nav>
+  {% endif %}
+
+  {% if request.GET.night %}
+    <span>
+      <nav class="mr-2 col-md-auto">
+        <ul class="pagination pagination-sm justify-content-center">
+          <li class="page-item disabled"><span class="page-link">Night:</span></li>
+          <li class="page-item active"><span class="page-link">{{ request.GET.night }}</span></li>
+          <li class="page-item"><a class="page-link" href="?{{ request.GET|GET_remove:"night"|GET_urlencode }}" rel="nofollow"><i class="fa fa-close"></i></a></li>
+        </ul>
+      </nav>
+    </span>
+  {% endif %}
+
+  {% if request.GET.night1 or request.GET.night2 %}
+    <span>
+      <nav class="mr-2 col-md-auto">
+        <ul class="pagination pagination-sm justify-content-center">
+          {% if request.GET.night1 %}
+            <li class="page-item active"><span class="page-link">{{ request.GET.night1 }}</span></li>
+          {% endif %}
+          <li class="page-item disabled"><span class="page-link">{% if request.GET.night1 %}<={% endif %}Night{% if request.GET.night2 %}<={% endif %}</span></li>
+          {% if request.GET.night2 %}
+            <li class="page-item active"><span class="page-link">{{ request.GET.night2 }}</span></li>
+          {% endif %}
+          <li class="page-item"><a class="page-link" href="?{{ request.GET|GET_remove:"night1"|GET_remove:"night2"|GET_urlencode }}" rel="nofollow"><i class="fa fa-close"></i></a></li>
+        </ul>
+      </nav>
+    </span>
+  {% endif %}
+
+  {% if request.GET.target %}
+    <span>
+      <nav class="mr-2 col-md-auto">
+        <ul class="pagination pagination-sm justify-content-center">
+          <li class="page-item disabled"><span class="page-link">Target:</span></li>
+          <li class="page-item active"><span class="page-link">{{ request.GET.target }}</span></li>
+          <li class="page-item"><a class="page-link" href="?{{ request.GET|GET_remove:"target"|GET_urlencode }}" rel="nofollow"><i class="fa fa-close"></i></a></li>
+        </ul>
+      </nav>
+    </span>
+  {% endif %}
+
+  {% if request.GET.maxdist %}
+    <span>
+      <nav class="mr-2 col-md-auto">
+        <ul class="pagination pagination-sm justify-content-center">
+          <li class="page-item disabled"><span class="page-link">Max Dist:</span></li>
+          <li class="page-item active"><span class="page-link">{{ request.GET.maxdist }}</span></li>
+          <li class="page-item"><a class="page-link" href="?{{ request.GET|GET_remove:"maxdist"|GET_urlencode }}" rel="nofollow"><i class="fa fa-close"></i></a></li>
+        </ul>
+      </nav>
+    </span>
+  {% endif %}
+
+  {% if request.GET.filename %}
+    <span>
+      <nav class="mr-2 col-md-auto">
+        <ul class="pagination pagination-sm justify-content-center">
+          <li class="page-item disabled"><span class="page-link">Filename:</span></li>
+          <li class="page-item active"><span class="page-link">{{ request.GET.filename }}</span></li>
+          <li class="page-item"><a class="page-link" href="?{{ request.GET|GET_remove:"filename"|GET_urlencode }}" rel="nofollow"><i class="fa fa-close"></i></a></li>
+        </ul>
+      </nav>
+    </span>
+  {% endif %}
+
+</div>
