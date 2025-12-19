@@ -7,8 +7,12 @@
 
 {% block title_div %}
   <h1>
-    {{ request.GET.sr }}</b> deg around {{ request.GET.ra }} {{request.GET.dec }}: {{ images|qs_length}} images
+  {{ images.count }} cutouts
   </h1>
+
+  <p  class="mb-4">
+    with <b>{{ request.GET.sr|floatformat:"-4" }}</b> deg radius around RA <b>{{ request.GET.ra|floatformat:4 }}</b> Dec <b>{{request.GET.dec|floatformat:4 }}</b>
+  </p>
 
 {% endblock %}
 
@@ -39,7 +43,7 @@
       <th>Exposure</th>
       <th>Target</th>
       <th>Dist</th>
-      <th>Preview</th>
+      <th class="w-25">Preview</th>
       <th></th>
     </tr>
     {% for image in images %}

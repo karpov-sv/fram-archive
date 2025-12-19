@@ -63,7 +63,7 @@ urlpatterns = [
     path(r'photometry/mjd', views_photometry.lc, {'mode': 'mjd'}, name='photometry_mjd'),
 
     # Search
-    path(r'search/?', views.search, name='search'),
+    path(r'search/', views.search, name='search'),
     path(r'search/cutouts/', views.search, {'mode':'cutouts'}, name='search_cutouts'),
     path(r'search/photometry/', views.search, {'mode':'photometry'}, name='search_photometry'),
 

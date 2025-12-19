@@ -12,7 +12,9 @@
 
   <p  class="mb-4">
   {% if request.GET.sr %}
-    in <b>{{ request.GET.sr }}</b> deg around RA=<b>{{ request.GET.ra }}</b> Dec=<b>{{request.GET.dec }}</b>
+    within <b>{{ request.GET.sr|floatformat:"-4" }}</b> deg around RA <b>{{ request.GET.ra|floatformat:4 }}</b> Dec <b>{{request.GET.dec|floatformat:4 }}</b>
+  {% elif request.GET.ra or request.GET.dec %}
+    covering RA <b>{{ request.GET.ra|floatformat:4 }}</b> Dec <b>{{request.GET.dec|floatformat:4 }}</b>
   {% endif %}
   </p>
 
