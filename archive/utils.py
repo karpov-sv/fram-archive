@@ -1,5 +1,3 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 from django.db import connections, transaction
 from django.shortcuts import redirect
 

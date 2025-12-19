@@ -1,0 +1,13 @@
+Django
+python-decouple
+python-magic
+django-crispy-forms
+crispy-bootstrap5
+django-el-pagination
+markdown
+django-debug-toolbar
+django-debug-toolbar-line-profiler
+decouple
+
+scikit-image
+opencv-python

@@ -1,18 +1,20 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 from django.http import HttpResponse, FileResponse
 from django.template.response import TemplateResponse
 from django.shortcuts import redirect
 from django.views.decorators.cache import cache_page
 from django.views.decorators.csrf import csrf_protect
 from django.contrib.auth.decorators import permission_required
+from django.conf import settings
 
 from django.db.models import Count
 
 import os, sys, posixpath
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from matplotlib.figure import Figure
+from matplotlib import colormaps
 import numpy as np
+
+import cv2
 
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -27,7 +29,6 @@ from esutil import htm
 
 from .models import Images, Calibrations
 from .utils import permission_required_or_403
-from . import settings
 
 # FRAM modules
 from fram import calibrate
@@ -294,18 +295,42 @@ def image_preview(request, id=0, size=0):
     if size:
         data = rescale(data, size/data.shape[1], mode='reflect', anti_aliasing=True, preserve_range=True)
 
-    figsize = (data.shape[1], data.shape[0])
-
-    fig = Figure(facecolor='white', dpi=72, figsize=(figsize[0]/72, figsize[1]/72))
-
     limits = np.percentile(ldata[np.isfinite(ldata)], [2.5, float(request.GET.get('qq', 99.75))])
 
-    fig.figimage(data, vmin=limits[0], vmax=limits[1], origin='lower', cmap=request.GET.get('cmap', 'Blues_r'))
+    # figsize = (data.shape[1], data.shape[0])
 
-    canvas = FigureCanvas(fig)
+    # fig = Figure(facecolor='white', dpi=72, figsize=(figsize[0]/72, figsize[1]/72))
 
-    response = HttpResponse(content_type='image/jpeg')
-    canvas.print_jpg(response)
+    # fig.figimage(data, vmin=limits[0], vmax=limits[1], origin='lower', cmap=request.GET.get('cmap', 'Blues_r'))
+
+    # canvas = FigureCanvas(fig)
+
+    # response = HttpResponse(content_type='image/jpeg')
+    # canvas.print_jpg(response)
+
+    data = (data - limits[0]) / (limits[1] - limits[0])
+    data = np.clip(data, 0.0, 1.0)
+
+    cmap = colormaps[request.GET.get('cmap', 'Blues_r')]
+    data = cmap(data) # RGBA
+
+    data = (255 * data).astype(np.uint8)
+
+    # OpenCV expects BGRA
+    data = cv2.cvtColor(data, cv2.COLOR_RGBA2BGRA)
+
+    success, buf = cv2.imencode(
+        ".jpg",
+        data,
+        [cv2.IMWRITE_JPEG_QUALITY, int(request.GET.get('quality', 75))]
+    )
+    if not success:
+        return HttpResponse(status=500)
+
+    return HttpResponse(
+        buf.tobytes(),
+        content_type="image/jpeg"
+    )
 
     return response
 
