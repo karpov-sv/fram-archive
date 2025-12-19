@@ -297,17 +297,6 @@ def image_preview(request, id=0, size=0):
 
     limits = np.percentile(ldata[np.isfinite(ldata)], [2.5, float(request.GET.get('qq', 99.75))])
 
-    # figsize = (data.shape[1], data.shape[0])
-
-    # fig = Figure(facecolor='white', dpi=72, figsize=(figsize[0]/72, figsize[1]/72))
-
-    # fig.figimage(data, vmin=limits[0], vmax=limits[1], origin='lower', cmap=request.GET.get('cmap', 'Blues_r'))
-
-    # canvas = FigureCanvas(fig)
-
-    # response = HttpResponse(content_type='image/jpeg')
-    # canvas.print_jpg(response)
-
     data = (data - limits[0]) / (limits[1] - limits[0])
     data = np.clip(data, 0.0, 1.0)
 
