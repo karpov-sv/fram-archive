@@ -248,6 +248,34 @@ def image_details(request, id=0):
     return TemplateResponse(request, 'image.html', context=context)
 
 
+def image_response(data, qq=[2.5, 99.75], cmap='Blues_r', quality=75):
+    limits = np.percentile(data[np.isfinite(data)], qq)
+
+    data = (data - limits[0]) / (limits[1] - limits[0])
+    data = np.clip(data, 0.0, 1.0)
+
+    cmap = colormaps[cmap]
+    data = cmap(data) # RGBA
+
+    data = (255 * data).astype(np.uint8)
+
+    # OpenCV expects BGRA
+    data = cv2.cvtColor(data, cv2.COLOR_RGBA2BGRA)
+
+    success, buf = cv2.imencode(
+        ".jpg",
+        data,
+        [cv2.IMWRITE_JPEG_QUALITY, int(quality)]
+    )
+    if not success:
+        return HttpResponse(status=500)
+
+    return HttpResponse(
+        buf.tobytes(),
+        content_type="image/jpeg"
+    )
+
+
 @cache_page(3600)
 @permission_required('auth.can_view_images', raise_exception=True)
 def image_preview(request, id=0, size=0):
@@ -287,38 +315,17 @@ def image_preview(request, id=0, size=0):
                         data *= np.median(flat)/flat
             else:
                 data,header = calibrate.crop_overscans(data, header)
-
-        ldata = data
     else:
-        ldata,lheader = calibrate.crop_overscans(data, header, subtract=False)
+        data,header = calibrate.crop_overscans(data, header, subtract=False)
 
     if size:
         data = rescale(data, size/data.shape[1], mode='reflect', anti_aliasing=True, preserve_range=True)
 
-    limits = np.percentile(ldata[np.isfinite(ldata)], [2.5, float(request.GET.get('qq', 99.75))])
-
-    data = (data - limits[0]) / (limits[1] - limits[0])
-    data = np.clip(data, 0.0, 1.0)
-
-    cmap = colormaps[request.GET.get('cmap', 'Blues_r')]
-    data = cmap(data) # RGBA
-
-    data = (255 * data).astype(np.uint8)
-
-    # OpenCV expects BGRA
-    data = cv2.cvtColor(data, cv2.COLOR_RGBA2BGRA)
-
-    success, buf = cv2.imencode(
-        ".jpg",
+    response = image_response(
         data,
-        [cv2.IMWRITE_JPEG_QUALITY, int(request.GET.get('quality', 75))]
-    )
-    if not success:
-        return HttpResponse(status=500)
-
-    return HttpResponse(
-        buf.tobytes(),
-        content_type="image/jpeg"
+        qq=[2.5, float(request.GET.get('qq', 99.75))],
+        cmap=request.GET.get('cmap', 'Blues_r'),
+        quality=int(request.GET.get('quality', 75))
     )
 
     return response
@@ -649,17 +656,11 @@ def image_cutout(request, id=0, size=0, mode='view'):
         else:
             crop = rescale(crop, size/crop.shape[1], mode='reflect', anti_aliasing=True)
 
-    figsize = (crop.shape[1], crop.shape[0])
-
-    fig = Figure(facecolor='white', dpi=72, figsize=(figsize[0]/72, figsize[1]/72))
-
-    if np.any(np.isfinite(crop)):
-        limits = np.percentile(crop[np.isfinite(crop)], [0.5, float(request.GET.get('qq', 99.75))])
-        fig.figimage(crop, vmin=limits[0], vmax=limits[1], origin='lower', cmap=request.GET.get('cmap', 'Blues_r'))
-
-    canvas = FigureCanvas(fig)
-
-    response = HttpResponse(content_type='image/jpeg')
-    canvas.print_jpg(response)
+    response = image_response(
+        crop,
+        qq=[2.5, float(request.GET.get('qq', 99.75))],
+        cmap=request.GET.get('cmap', 'Blues_r'),
+        quality=int(request.GET.get('quality', 75))
+    )
 
     return response
