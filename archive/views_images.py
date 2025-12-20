@@ -29,6 +29,7 @@ from esutil import htm
 
 from .models import Images, Calibrations
 from .utils import permission_required_or_403
+from .utils import db_query
 
 # FRAM modules
 from fram import calibrate
@@ -144,16 +145,20 @@ def images_list(request):
         images = images.extra(where=["q3c_radial_query(ra, dec, %s, %s, %s)"], params=(ra, dec, sr))
 
     # Possible values for fields
-    types = images.distinct('type').values('type')
+    # types = images.distinct('type').values('type')
+    types = db_query("select fast_distinct(%s, %s) as type", ('images', 'type'))
     context['types'] = types
 
-    sites = images.distinct('site').values('site')
+    # sites = images.distinct('site').values('site')
+    sites = db_query("select fast_distinct(%s, %s) as site", ('images', 'site'))
     context['sites'] = sites
 
-    ccds = images.distinct('ccd').values('ccd')
+    # ccds = images.distinct('ccd').values('ccd')
+    ccds = db_query("select fast_distinct(%s, %s) as ccd", ('images', 'ccd'))
+    filters = db_query("select fast_distinct(%s, %s) as filter", ('images', 'filter'))
     context['ccds'] = ccds
 
-    filters = images.distinct('filter').values('filter')
+    # filters = images.distinct('filter').values('filter')
     context['filters'] = filters
 
     sort = request.GET.get('sort')
@@ -194,13 +199,16 @@ def images_cutouts(request):
         images = images.extra(where=["q3c_dist(ra, dec, %s, %s) < %s"], params=(ra, dec, maxdist))
 
     # Possible values for fields
-    sites = images.distinct('site').values('site')
+    # sites = images.distinct('site').values('site')
+    sites = db_query("select fast_distinct(%s, %s) as site", ('images', 'site'))
     context['sites'] = sites
 
-    ccds = images.distinct('ccd').values('ccd')
+    # ccds = images.distinct('ccd').values('ccd')
+    ccds = db_query("select fast_distinct(%s, %s) as ccd", ('images', 'ccd'))
     context['ccds'] = ccds
 
-    filters = images.distinct('filter').values('filter')
+    # filters = images.distinct('filter').values('filter')
+    filters = db_query("select fast_distinct(%s, %s) as filter", ('images', 'filter'))
     context['filters'] = filters
 
     sort = request.GET.get('sort')

@@ -25,11 +25,7 @@
 {% include 'images_filter.html' %}
 
 {% if not request.GET.singlepage %}
-  {% if request.GET.per100 %}
-    {% paginate 100 images %}
-  {% else %}
-    {% paginate 10 images %}
-  {% endif %}
+  {% paginate 10 images %}
 {% endif %}
   <table class="table table-striped table-sm">
     <tr>
