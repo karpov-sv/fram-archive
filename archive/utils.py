@@ -4,8 +4,9 @@ from django.shortcuts import redirect
 from urllib.parse import urlencode
 
 import functools
-
 from django.core.cache import cache
+import hashlib
+import pickle
 
 _MISSING = object()
 
@@ -17,7 +18,9 @@ def memoize(timeout=600, make_key=None):
             if make_key:
                 key = make_key(*args, **kwargs)
             else:
-                key = f"{func.__module__}.{func.__qualname__}:{args}:{kwargs}"
+                key_data = (func.__module__, func.__qualname__, args, kwargs)
+                key_prefix = f"{func.__module__}.{func.__qualname__}"
+                key = f"{key_prefix}:{hashlib.md5(pickle.dumps(key_data)).hexdigest()}"
 
             result = cache.get(key, _MISSING)
             if result is not _MISSING:
