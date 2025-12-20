@@ -3,13 +3,43 @@ from django.shortcuts import redirect
 
 from urllib.parse import urlencode
 
+import functools
+
+from django.core.cache import cache
+
+_MISSING = object()
+
+
+def memoize(timeout=600, make_key=None):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            if make_key:
+                key = make_key(*args, **kwargs)
+            else:
+                key = f"{func.__module__}.{func.__qualname__}:{args}:{kwargs}"
+
+            result = cache.get(key, _MISSING)
+            if result is not _MISSING:
+                return result
+
+            result = func(*args, **kwargs)
+            cache.set(key, result, timeout)
+            return result
+
+        return wrapper
+    return decorator
+
 
 #@transaction.commit_on_success
+@memoize(timeout=600)
 def db_query(string, params, db='fram', debug=False, simplify=True):
     connection = connections[db]
 
     cursor = connection.cursor()
     result = None
+
+    print('db_query')
 
     if debug:
         print(cursor.mogrify(string, params))
@@ -49,6 +79,7 @@ def redirect_get(url_or_view, *args, **kwargs):
 
 
 from django.core.exceptions import PermissionDenied
+
 
 class IgnorePermissionDeniedFilter:
     def filter(self, record):

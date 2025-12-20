@@ -125,8 +125,12 @@ CACHES = {
     #     'LOCATION': '/tmp/django_cache_fram',
     # }
     "default": {
-        "BACKEND": "django.core.cache.backends.dummy.DummyCache",
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "unique-snowflake",
     }
+    # "default": {
+    #     "BACKEND": "django.core.cache.backends.dummy.DummyCache",
+    # }
 }
 
 # Password validation
