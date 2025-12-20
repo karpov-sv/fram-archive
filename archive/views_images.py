@@ -346,7 +346,7 @@ def image_download(request, id, raw=True):
     filename = posixpath.join(settings.BASE_DIR, filename)
 
     if raw or image.type in ['masterdark', 'masterflat', 'dcurrent', 'bias']:
-        response = HttpResponse(FileResponse(file(filename)), content_type='application/octet-stream')
+        response = FileResponse(open(filename, "rb"), content_type='application/octet-stream')
         response['Content-Disposition'] = 'attachment; filename='+os.path.split(filename)[-1]
         response['Content-Length'] = os.path.getsize(filename)
         return response
