@@ -66,6 +66,8 @@ class ImagesSearchForm(forms.Form):
         widget=forms.NumberInput(attrs={'placeholder': 'Maximal allowed distance from frame center'})
     )
 
+    nofiltering = forms.BooleanField(required=False, label="Disable quality cuts")
+
     def __init__(self, *args, **kwargs):
         mode = kwargs.pop('mode')
 
@@ -99,7 +101,9 @@ class ImagesSearchForm(forms.Form):
             Row(
                 Column('night1', css_class='col-md-auto'),
                 Column('night2', css_class='col-md-auto'),
-                Column('filename' if mode == 'images' else 'maxdist', css_class='col-md'),
+                Column('filename', css_class='col-md') if mode == 'images' else None,
+                Column('maxdist', css_class='col-md') if mode == 'cutouts' else None,
+                Column('nofiltering', css_class="col-md mb-2") if mode == 'photometry' else None,
                 Column(
                     Submit('search', 'Search', css_class='btn-primary mb-1'),
                     css_class="col-md-auto"
@@ -126,3 +130,6 @@ class ImagesSearchForm(forms.Form):
         if mode == 'cutouts':
             self.fields['sr_value'].initial = 10
             self.fields['sr_units'].initial = 'arcmin'
+        elif mode == 'photometry':
+            self.fields['sr_value'].initial = 3
+            self.fields['sr_units'].initial = 'arcsec'

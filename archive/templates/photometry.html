@@ -1,10 +1,12 @@
 {% extends "template.html" %}
 
 {% load filters %}
+{% load crispy_forms_tags %}
 
 {% block head %}
   {% if lc %}
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+
     <script language="javascript">
      /* Check WebGL */
      function webgl_support () {
@@ -85,145 +87,18 @@
 
 {% block content %}
 
-<!-- Cutouts -->
+<!-- Photometry -->
 
-  <!-- <h3>Photometry</h3> -->
-
-{% if message %}
-  <div class="alert alert-warning" role="alert">
-    {{ message }}
-  </div>
-{% endif %}
-{% if name %}
-  <div class="alert alert-success" role="alert">
-    Resolved to: {{ name }} at {{ ra }} {{ dec }}
-  </div>
-{% endif %}
-
-<form class="form mb-4" role="form" action="{% url 'search_photometry' %}" method="post">{% csrf_token %}
-  <div class="form-group">
-    <div class="input-group">
-      <div class="input-group-prepend">
-        <span class="input-group-text" id="addon-coords">Position:</span>
-      </div>
-      <input type="text" class="form-control" id="coords" name="coords" {% if coords %}value="{{ coords }}"{% endif %}
-             placeholder="Coordinates or SIMBAD object name" size=40 aria-label="Coordinates" aria-describedby="addon-coords">
-
-      <div class="input-group-append">
-        <span class="input-group-text" id="addon-sr">Radius:</span>
-      </div>
-      <div class="input-group-append">
-        <input type="text" class="form-control" name="sr_value" placeholder="Radius" size=15 {% if sr_value %}value="{{ sr_value }}"{% else %}value="3"{% endif %} aria-label="Radius" aria-describedby="addon-sr">
-      </div>
-
-      <div class="input-group-append">
-        <select class="custom-select" name="sr_units" title="Units"  aria-label="Units">
-          <option value="arcsec" {% if sr_units == 'arcsec' %}selected{% endif %}>Arcsec</option>
-          <option value="arcmin" {% if sr_units == 'arcmin' %}selected{% endif %}>Arcmin</option>
-          <option value="deg" {% if sr_units == 'deg' %}selected{% endif %}>Deg</option>
-        </select>
-      </div>
-
-    </div>
-  </div>
-
-  <div class="form-group">
-    <div class="input-group">
-      <!-- Site -->
-      <div class="input-group-prepend">
-        <span class="input-group-text" id="addon-site">Site:</span>
-      </div>
-
-      <select class="custom-select" name="site" title="Telescope site"  aria-label="Site" aria-describedby="addon-site">
-        <option value="all">All</option>
-        {% for vsite in sites %}
-          <option value="{{ vsite.site }}" {% if vsite.site == site %}selected{% endif %}>{{ vsite.site }}</option>
-        {% endfor %}
-      </select>
-
-      <!-- CCD -->
-      <div class="input-group-prepend">
-        <span class="input-group-text" id="addon-ccd">CCD:</span>
-      </div>
-
-      <select class="custom-select" name="ccd" title="Telescope CCD"  aria-label="CCD" aria-describedby="addon-ccd">
-        <option value="all">All</option>
-        {% for vccd in ccds %}
-          <option value="{{ vccd.ccd }}" {% if vccd.ccd == ccd %}selected{% endif %}>{{ vccd.ccd }}</option>
-        {% endfor %}
-      </select>
-
-      <!-- Filter -->
-      <div class="input-group-prepend">
-        <span class="input-group-text" id="addon-filter">Filter:</span>
-      </div>
-
-      <select class="custom-select" name="filter" title="Telescope filter"  aria-label="Filter" aria-describedby="addon-filter">
-        <option value="all">All</option>
-        {% for vfilter in filters %}
-          <option value="{{ vfilter.filter }}" {% if vfilter.filter == filter %}selected{% endif %}>{{ vfilter.filter }}</option>
-        {% endfor %}
-      </select>
-
-    </div>
-
-  </div>
-
-  <div class="form-group row">
-
-    <!-- Nights -->
-    <div class="input-group col-sm">
-      <input type="text" class="form-control" name="night1" placeholder="YYYYMMDD" size=20 {% if night1 %}value="{{ night1 }}"{% endif %} aria-label="Night" aria-describedby="addon-night1">
-
-      <div class="input-group-append">
-        <span class="input-group-text" id="addon-sr"> <= Night <= </span>
-      </div>
-
-      <input type="text" class="form-control" name="night2" placeholder="YYYYMMDD" size=20 {% if night2 %}value="{{ night2 }}"{% endif %}aria-label="Night" aria-describedby="addon-night2">
-
-    </div>
-
-    <!-- Mag -->
-    <!--
-    <div class="input-group col-sm">
-      <div class="input-group-append">
-        <span class="input-group-text" id="addon-magerr"> MagErr < </span>
-      </div>
-
-      <input type="text" class="form-control" name="magerr" placeholder="Max MagErr" size=20 {% if magerr %}value="{{ magerr }}"{% endif %}aria-label="MagErr" aria-describedby="addon-magerr">
-
-      <div class="input-group-append">
-        <span class="input-group-text" id="addon-magerr"> Nstars >= </span>
-      </div>
-
-      <input type="text" class="form-control" name="nstars" placeholder="Min Nstars" size=20 {% if nstars %}value="{{ nstars }}"{% endif %}aria-label="Nstars" aria-describedby="addon-nstars" title="Minimum number of stars used for frame calibration">
-
-    </div>
-    -->
-
-    <div class="input-group col-sm">
-      <div class="form-check form-check-inline">
-        <input class="form-check-input" type="checkbox" id="nofiltering" name="nofiltering" {% if nofiltering %}checked{% endif %}>
-        <label class="form-check-label" for="nofiltering">Disable quality cuts</label>
-      </div>
-    </div>
-
-  </div>
-
-  <!-- Buttons -->
-  <div class="input-group">
-    <button type="submit" class="btn btn-secondary">Search</button>
-  </div>
+  {% crispy form %}
 
   {% if not lc %}
     <div class="form-text text-muted">
       It will extract all photometric measurements for the specified sky point, within the search radius.<br>
     </div>
   {% endif %}
-</form>
 
 {% if lc %}
-  <div id="lcDiv" class="" style="width:100%, height:600px">
+  <div id="lcDiv" class="mt-4" style="width:100%, height:600px">
     <!-- <img src="{{ lc }}" class="img-fluid"> -->
   </div>
 

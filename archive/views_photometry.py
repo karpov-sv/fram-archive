@@ -15,7 +15,6 @@ from astropy.stats import mad_std
 
 from .models import Photometry
 
-from fram.calibrate import rstd,rmean
 
 def radectoxieta(ra, dec, ra0=0, dec0=0):
     ra,dec = [np.asarray(_) for _ in (ra,dec)]
@@ -35,6 +34,7 @@ def radectoxieta(ra, dec, ra0=0, dec0=0):
     eta *= 180./np.pi
 
     return xi,eta
+
 
 def get_lc(request):
     lc = Photometry.objects.order_by('time')
@@ -84,6 +84,7 @@ def get_lc(request):
     lc = lc.extra(where=["q3c_radial_query(ra, dec, %s, %s, %s)"], params=(ra, dec, sr))
 
     return lc
+
 
 def lc(request, mode="jpg", size=800):
     lc = get_lc(request)

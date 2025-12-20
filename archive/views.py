@@ -99,23 +99,21 @@ def search(request, mode='images'):
 
                     return redirect_get('images_cutouts',  get=params)
 
-                # elif mode == 'photometry':
-                #     # Search photometry database
-                #     if sr > 5/60:
-                #         params['sr'] = 5/60
-                #         params['sr_value'] = 1
-                #         params['sr_units'] = 'arcmin'
+                elif mode == 'photometry':
+                    # Restrict the radius
+                    if sr > 5/60:
+                        params['sr'] = 5/60
 
-                #     context['lc'] = reverse('photometry_lc') + '?' + urlencode(params)
-                #     context['lc_json'] = reverse('photometry_json') + '?' + urlencode(params)
-                #     context['lc_text'] = reverse('photometry_text') + '?' + urlencode(params)
-                #     context['lc_mjd'] = reverse('photometry_mjd') + '?' + urlencode(params)
+                    context['lc'] = reverse('photometry_lc') + '?' + urlencode(params)
+                    context['lc_json'] = reverse('photometry_json') + '?' + urlencode(params)
+                    context['lc_text'] = reverse('photometry_text') + '?' + urlencode(params)
+                    context['lc_mjd'] = reverse('photometry_mjd') + '?' + urlencode(params)
 
         context.update(params)
 
     if mode == 'cutouts':
         return TemplateResponse(request, 'cutouts.html', context=context)
-    # elif mode == 'photometry':
-    #     return TemplateResponse(request, 'photometry.html', context=context)
+    elif mode == 'photometry':
+        return TemplateResponse(request, 'photometry.html', context=context)
     else:
         return TemplateResponse(request, 'search.html', context=context)
