@@ -28,7 +28,6 @@ from astropy.wcs import WCS
 from esutil import htm
 
 from .models import Images, Calibrations
-from .utils import permission_required_or_403
 from .utils import db_query
 
 # FRAM modules

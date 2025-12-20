@@ -10,7 +10,7 @@ from urllib.parse import urlencode
 from django.contrib import messages
 
 from .models import Images
-from .utils import permission_required_or_403, redirect_get, db_query
+from .utils import redirect_get, db_query
 
 # FRAM modules
 from fram.resolve import resolve

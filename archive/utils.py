@@ -1,11 +1,8 @@
 from django.db import connections, transaction
 from django.shortcuts import redirect
 
-import posixpath
-import urllib
 from urllib.parse import urlencode
 
-from django.contrib.auth.decorators import permission_required, user_passes_test, PermissionDenied
 
 #@transaction.commit_on_success
 def db_query(string, params, db='fram', debug=False, simplify=True):
@@ -40,37 +37,6 @@ def db_query(string, params, db='fram', debug=False, simplify=True):
 
     return result
 
-def permission_required_or_403(perm, login_url=None):
-    """
-    Decorator for views that checks whether a user has a particular permission
-    enabled, redirecting to the log-in page if neccesary.
-    If the raise_exception parameter is given the PermissionDenied exception
-    is raised.
-    """
-    def check_perms(user):
-        # First check if the user has the permission (even anon users)
-        if user.has_perm(perm):
-            return True
-        # In case the 403 handler should be called raise the exception
-        if user.is_authenticated():
-            raise PermissionDenied
-        # As the last resort, show the login form
-        return False
-    return user_passes_test(check_perms, login_url=login_url)
-
-def permission_denied():
-    raise PermissionDenied
-
-def has_permission(request, perm):
-    return request.user.has_perm(perm)
-
-def assert_permission(request, perm):
-    if not request.user.has_perm(perm):
-        raise PermissionDenied
-
-def assert_is_staff(request):
-    if not request.user.is_staff:
-        raise PermissionDenied
 
 def redirect_get(url_or_view, *args, **kwargs):
     get_params = kwargs.pop('get', None)
@@ -80,3 +46,15 @@ def redirect_get(url_or_view, *args, **kwargs):
         response['Location'] += '?' + urlencode(get_params)
 
     return response
+
+
+from django.core.exceptions import PermissionDenied
+
+class IgnorePermissionDeniedFilter:
+    def filter(self, record):
+        # Django stores the exception info in record.exc_info
+        if record.exc_info:
+            exc_type, exc_value, _ = record.exc_info
+            if isinstance(exc_value, PermissionDenied):
+                return False
+        return True
