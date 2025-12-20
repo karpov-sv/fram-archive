@@ -73,6 +73,7 @@ def search(request, mode='images'):
                 name,ra,dec = resolve(coords)
 
                 if name:
+                    params['name'] = name
                     params['ra'] = ra
                     params['dec'] = dec
                 else:
