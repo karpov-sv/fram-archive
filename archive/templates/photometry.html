@@ -1,19 +1,15 @@
 {% extends "template.html" %}
-
 {% load filters %}
 {% load crispy_forms_tags %}
-
 {% block head %}
   {% if lc %}
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-
+    <script src="https://cdn.plot.ly/plotly-3.3.0.min.js"></script>
     <script language="javascript">
      /* Check WebGL */
      function webgl_support () {
        try {
          var canvas = document.createElement('canvas');
-         return !!window.WebGLRenderingContext &&
-         (canvas.getContext('webgl') || canvas.getContext('experimental-webgl'));
+         return !!window.WebGLRenderingContext && (canvas.getContext('webgl') || canvas.getContext('experimental-webgl'));
        } catch(e) {
          return false;
        }
@@ -21,56 +17,75 @@
 
      $(document).ready(function() {
        $('#lcDiv').html("Loading...");
-       Plotly.d3.json('{{ lc_json|safe }}', function(error, data){
-         if (error) {
-           $('#lcDiv').text("Error loading plot");
 
-           return console.warn(error);
-         }
-
+       fetch('{{ lc_json|safe }}')
+                        .then(response => response.json())
+                        .then(data => {
          $('#lcDiv').text("");
-
          window.lcs = data['lcs'];
-
          plot_lcs('lcDiv', data['title'], data['lcs'])
+       }).catch(error => {
+         $('#lcDiv').text("Error loading plot");
+         console.warn(error);
        });
      });
 
      function plot_lcs(id, title, lcs) {
-       var data = [ ];
+       var data = [  ];
        var scatter_type = webgl_support() ? 'scattergl' : 'scatter';
 
        for(var i=0; i < lcs.length; i++) {
          var lc = lcs[i];
-
          var custom = [];
          for(var ii=0; ii < lc.times.length; ii++) {
            custom.push('Nstars = ' + lc.nstars[ii] + ' std = ' + lc.stds[ii].toFixed(3) + '<br>MJD = ' + lc.mjds[ii].toFixed(2));
          }
 
-         data.push({x: lc.times, y: lc.mags, customdata: custom, opacity: 0.6, marker: {size: 5, color: lc.color},
-                    error_y: {array: lc.magerrs, type: 'data', visible: true, thickness:1, width: 0, opacity:0.3, color: lc.color},
-                    mode: 'markers', type: scatter_type, name: lc.filter,
-                    hovertemplate: '%{x}:<br>%{data.name} mag = %{y:.2f} &plusmn; %{error_y.array:.3f}<br>%{customdata}<extra></extra>'});
-
-         /* data.push({x: lc.xi, y: lc.eta, opacity: 0.6, marker: {size: 3, color: lc.color},
-            mode: 'markers', type: 'scattergl', name: lc.filter,
-            xaxis: 'x2', yaxis: 'y2',}); */
+         data.push({
+           x: lc.times,
+           y: lc.mags,
+           customdata: custom,
+           opacity: 0.6,
+           marker: {size: 5, color: lc.color},
+           error_y: {
+             array: lc.magerrs,
+             type: 'data',
+             visible: true,
+             thickness:1,
+             width: 0,
+             opacity:0.3,
+             color: lc.color
+           },
+           mode: 'markers',
+           type: scatter_type,
+           name: lc.filter,
+           hovertemplate: '%{x}:<br>%{data.name} mag = %{y:.2f} &plusmn; %{error_y.array:.3f}<br>%{customdata}<extra></extra>'
+         });
        }
 
        var layout = {
-         title: title,
-         xaxis: {title: 'Time, UT', automargin: true, showline: true, zeroline: false},
-         yaxis: {title: 'Magnitude', autorange: 'reversed', automargin: true, showline: true, zeroline: false},
+         title: {text: title},
+         xaxis: {
+           title: {text: 'Time, UT'},
+           automargin: true,
+           showline: true,
+           zeroline: false
+         },
+         yaxis: {
+           title: {text: 'Magnitude'},
+           autorange: 'reversed',
+           automargin: true,
+           showline: true,
+           zeroline: false
+         },
+         modebar: {
+           add: ['togglehover'],
+         },
          hovermode: false,
          autosize: true,
          margin: {t: 30, r:30},
          font: {size: 10},
          showlegend: true,
-
-         // Inset
-         /* xaxis2: {domain: [0.85, 1.00], range: [-{{ sr|multiply:3600 }}, {{ sr|multiply:3600 }}], anchor: 'x2', scaleanchor: 'y2', constrain: 'domain', showline: true, zeroline: false}, */
-         /* yaxis2: {domain: [0.85, 1.00], range: [-{{ sr|multiply:3600 }}, {{ sr|multiply:3600 }}], anchor: 'y2', showline: true, zeroline: false}, */
        };
 
        var config = {responsive: true}
@@ -82,13 +97,10 @@
 {% endblock %}
 
 {% block ptitle %}Photometry : FRAM Archive{% endblock %}
-
 {% block title %}Photometry from FRAM archive{% endblock %}
 
 {% block content %}
-
-<!-- Photometry -->
-
+  <!-- Photometry -->
   {% crispy form %}
 
   {% if not lc %}
@@ -97,33 +109,27 @@
     </div>
   {% endif %}
 
-{% if lc %}
-  <div id="lcDiv" class="mt-4" style="width:100%, height:600px">
-    <!-- <img src="{{ lc }}" class="img-fluid"> -->
-  </div>
-
-   {% if lc_text %}
-    <div>
-      <a href="{{ lc_text|safe }}">Download full data</a>
-      -
-      <a href="{{ lc_mjd|safe }}">Short and filtered</a>
+  {% if lc %}
+    <div id="lcDiv" class="mt-4" style="width:100%, height:600px">
+      <!-- <img src="{{ lc }}" class="img-fluid"> -->
     </div>
+
+    {% if lc_text %}
+      <div>
+        <a href="{{ lc_text|safe }}">Download full data</a> -
+        <a href="{{ lc_mjd|safe }}">Short and filtered</a>
+      </div>
+    {% endif %}
+
+    {% if ra or dec %}
+      <div>
+        <a href="http://simbad.u-strasbg.fr/simbad/sim-basic?Ident={{ ra }}+{{ dec }}&submit=SIMBAD+search" title="Check SIMBAD for this position" target="_blank">SIMBAD</a> -
+        <a href="https://www.aavso.org/vsx/index.php?view=results.get&coords={{ ra }}+{{ dec }}&format=d&size=60&unit=3" title="Check AAVSO VSX for this position" target="_blank">AAVSO</a> -
+        <a href="http://skydot.lanl.gov/nsvs/cone_search.php?ra={{ ra }}&dec={{ dec }}&rad=0.5&saturated=on&nocorr=on&lonpts=on&hiscat=on&hicorr=on&hisigcorr=on&radecflip=on" title="NSVS data for this point" target="_blank">NSVS</a> -
+        <a href="https://asas-sn.osu.edu/photometry?utf8=✓&ra={{ ra }}&dec={{ dec }}&radius=0.5&vmag_min=&vmag_max=&epochs_min=&epochs_max=&rms_min=&rms_max=&sort_by=raj2000" target="_blank">ASAS-SN</a> -
+        <a href="http://aladin.u-strasbg.fr/AladinLite/?target={{ ra }}%20{{ dec }}&fov=0.40&survey=P%2FDSS2%2Fcolor" title="Aladin Lite" target="_blank">Aladin</a>
+      </div>
+    {% endif %}
+
   {% endif %}
-
-  {% if ra or dec %}
-    <div>
-      <a href="http://simbad.u-strasbg.fr/simbad/sim-basic?Ident={{ ra }}+{{ dec }}&submit=SIMBAD+search" title="Check SIMBAD for this position" target="_blank">SIMBAD</a>
-      -
-      <a href="https://www.aavso.org/vsx/index.php?view=results.get&coords={{ ra }}+{{ dec }}&format=d&size=60&unit=3" title="Check AAVSO VSX for this position" target="_blank">AAVSO</a>
-      -
-      <a href="http://skydot.lanl.gov/nsvs/cone_search.php?ra={{ ra }}&dec={{ dec }}&rad=0.5&saturated=on&nocorr=on&lonpts=on&hiscat=on&hicorr=on&hisigcorr=on&radecflip=on" title="NSVS data for this point" target="_blank">NSVS</a>
-      -
-      <a href="https://asas-sn.osu.edu/photometry?utf8=✓&ra={{ ra }}&dec={{ dec }}&radius=0.5&vmag_min=&vmag_max=&epochs_min=&epochs_max=&rms_min=&rms_max=&sort_by=raj2000" target="_blank">ASAS-SN</a>
-      -
-      <a href="http://aladin.u-strasbg.fr/AladinLite/?target={{ ra }}%20{{ dec }}&fov=0.40&survey=P%2FDSS2%2Fcolor" title="Aladin Lite" target="_blank">Aladin</a>
-    </div>
-  {% endif %}
-
-{% endif %}
-
 {% endblock %}
