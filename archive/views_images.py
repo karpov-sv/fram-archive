@@ -28,7 +28,7 @@ from astropy.wcs import WCS
 from esutil import htm
 
 from .models import Images, Calibrations
-from .utils import db_query
+from .utils import db_query, memoize
 
 # FRAM modules
 from fram import calibrate
@@ -37,7 +37,7 @@ from fram import utils
 from fram.fram import Fram, parse_iso_time, get_night
 
 
-# TODO: memoize the result
+@memoize(timeout=3600, make_key=lambda image, type='masterdark', **kwargs: f"calib:{image.id}:{type}")
 def find_calibration_image(image, type='masterdark', night=None, site=None, ccd=None, serial=None, exposure=None, cropped_width=None, cropped_height=None, filter=None, binning=None):
     calibs = Calibrations.objects.all()
 

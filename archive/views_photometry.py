@@ -89,18 +89,26 @@ def get_lc(request):
 def lc(request, mode="jpg", size=800):
     lc = get_lc(request)
 
-    times = np.array([_.time for _ in lc])
-    sites = np.array([_.site for _ in lc])
-    ccds = np.array([_.ccd for _ in lc])
-    filters = np.array([_.filter for _ in lc])
-    ras = np.array([_.ra for _ in lc])
-    decs = np.array([_.dec for _ in lc])
-    mags = np.array([_.mag for _ in lc])
-    magerrs = np.array([_.magerr for _ in lc])
-    flags = np.array([_.flags for _ in lc])
-    fwhms = np.array([_.fwhm for _ in lc])
-    stds = np.array([_.std for _ in lc])
-    nstars = np.array([_.nstars for _ in lc])
+    # Fetch all data in a single query instead of iterating 10+ times
+    data = list(lc.values_list('time', 'site', 'ccd', 'filter', 'ra', 'dec',
+                                'mag', 'magerr', 'flags', 'fwhm', 'std', 'nstars'))
+
+    if data:
+        times, sites, ccds, filters, ras, decs, mags, magerrs, flags, fwhms, stds, nstars = zip(*data)
+        times = np.array(times)
+        sites = np.array(sites)
+        ccds = np.array(ccds)
+        filters = np.array(filters)
+        ras = np.array(ras)
+        decs = np.array(decs)
+        mags = np.array(mags)
+        magerrs = np.array(magerrs)
+        flags = np.array(flags)
+        fwhms = np.array(fwhms)
+        stds = np.array(stds)
+        nstars = np.array(nstars)
+    else:
+        times = sites = ccds = filters = ras = decs = mags = magerrs = flags = fwhms = stds = nstars = np.array([])
 
     mjds = Time(times).mjd if len(times) else []
 
