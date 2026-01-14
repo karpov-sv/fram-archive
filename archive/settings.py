@@ -44,7 +44,8 @@ INSTALLED_APPS = [
     'crispy_forms',
     'crispy_bootstrap5',
     'el_pagination',
-    'archive',
+    'archive.apps.ArchiveConfig',  # Standard archive app
+    'archive.apps.FramConfig',     # Registers 'fram' label for models
     'debug_toolbar',
     # 'debug_toolbar_line_profiler',
 ]
