@@ -105,9 +105,25 @@ venv.bak/
 
 # Backups
 *~
+*#
 
 # Project specific
 data/
 tmp/
 *.fits
 *.ipynb
+.aider*
+photometry
+data
+
+# Test environment
+.env.test
+
+# Test reports and benchmarks
+locust_tests/reports/
+tests/benchmarks/*.json
+performance_report.html
+
+# IDE
+.vscode/
+.idea/
