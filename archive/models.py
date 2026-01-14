@@ -7,7 +7,7 @@
 # Feel free to rename the models, but don't rename db_table values or field names.
 
 from django.db import models
-from django.contrib.postgres.fields import JSONField
+from django.db.models import JSONField
 
 
 class Images(models.Model):
@@ -75,7 +75,7 @@ class Calibrations(models.Model):
 class Photometry(models.Model):
     image = models.IntegerField(blank=True, null=True)
     night = models.TextField(blank=True, null=True)
-    time = models.DateTimeField(blank=True, null=True, primary_key=True)
+    time = models.DateTimeField(primary_key=True)
     filter = models.TextField(blank=True, null=True)
     ccd = models.TextField(blank=True, null=True)
     site = models.TextField(blank=True, null=True)
