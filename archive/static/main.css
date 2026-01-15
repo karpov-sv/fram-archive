@@ -71,12 +71,12 @@
     content:'\f077';
     float:right;
 }
-
 .collapse-chevron.collapsed:after {
     font-family:Fontawesome;
     content:'\f078';
     float:right;
 }
+
 
 .collapse-chevron-horizontal:after {
     font-family:Fontawesome;
@@ -144,6 +144,32 @@
   display: none;
 }
 
+
 .w-1 {
   width: 1em;
+}
+
+.toast-container > .toast {
+    max-width: 1200px;
+    min-width: 250px;
+    width: auto;
+}
+
+/* Hide required field asterisk in Crispy forms */
+span.asteriskField {
+  display: none;
+}
+
+.card-badge-right {
+  position: absolute;
+  top: 0;
+  right: 1em;
+  transform: translate(0%, -50%);
+}
+
+.card-badge-left {
+  position: absolute;
+  top: 0;
+  left: 1em;
+  transform: translate(0%, -50%);
 }
