@@ -360,7 +360,7 @@ def image_preview(request, id=0, size=0):
 
     zoom = int(request.GET.get('zoom', 1))
 
-    if show_grid is False and zoom == 1:
+    if show_grid is False:
         # Fast OpenCV-based image display
         if zoom > 1:
             x0,width = data.shape[1]/2, data.shape[1]
@@ -369,17 +369,39 @@ def image_preview(request, id=0, size=0):
             x0 += float(request.GET.get('dx', 0)) * width/4
             y0 += float(request.GET.get('dy', 0)) * height/4
 
-            # TODO: pad with zeros instead?..
-            x1,x2 = max(0, int(x0 - 0.5*width/zoom)), min(int(x0 + 0.5*width/zoom), width)
-            y1,y2 = max(0, int(y0 - 0.5*height/zoom)), min(int(y0 + 0.5*height/zoom), height)
+            half_width = 0.5 * width / zoom
+            half_height = 0.5 * height / zoom
 
-            data = data[y1:y2, x1:x2]
+            x1, x2 = int(x0 - half_width), int(x0 + half_width)
+            y1, y2 = int(y0 - half_height), int(y0 + half_height)
+
+            target_width = x2 - x1
+            target_height = y2 - y1
+
+            padded = np.zeros((target_height, target_width), dtype=np.double)
+            # padded *= np.nan
+
+            src_x1 = max(0, x1)
+            src_y1 = max(0, y1)
+            src_x2 = min(width, x2)
+            src_y2 = min(height, y2)
+
+            if src_x2 > src_x1 and src_y2 > src_y1:
+                dst_x1 = src_x1 - x1
+                dst_y1 = src_y1 - y1
+                dst_x2 = dst_x1 + (src_x2 - src_x1)
+                dst_y2 = dst_y1 + (src_y2 - src_y1)
+
+                padded += np.nanmedian(data[src_y1:src_y2, src_x1:src_x2])
+                padded[dst_y1:dst_y2, dst_x1:dst_x2] = data[src_y1:src_y2, src_x1:src_x2]
+
+            data = padded
 
         if size:
             # data = rescale(data, size/data.shape[1], mode='reflect', anti_aliasing=True, preserve_range=True)
             data = cv2.resize(data, [int(size), int(size * data.shape[0]/data.shape[1])], interpolation=cv2.INTER_AREA)
 
-        response = image_response(
+        return image_response(
             data,
             stretch=request.GET.get('stretch', 'linear'),
             qq=[float(request.GET.get('qmin', 0.5)), float(request.GET.get('qmax', 99.5))],
@@ -441,9 +463,6 @@ def image_preview(request, id=0, size=0):
     fig.savefig(buf, format=fmt, pil_kwargs={'quality':int(request.GET.get('quality', 75))})
 
     return HttpResponse(buf.getvalue(), content_type='image/%s' % fmt)
-
-
-    return response
 
 
 @permission_required('auth.can_view_images', raise_exception=True)
