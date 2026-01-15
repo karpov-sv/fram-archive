@@ -379,7 +379,6 @@ def image_preview(request, id=0, size=0):
             target_height = y2 - y1
 
             padded = np.zeros((target_height, target_width), dtype=np.double)
-            # padded *= np.nan
 
             src_x1 = max(0, x1)
             src_y1 = max(0, y1)
@@ -398,7 +397,6 @@ def image_preview(request, id=0, size=0):
             data = padded
 
         if size:
-            # data = rescale(data, size/data.shape[1], mode='reflect', anti_aliasing=True, preserve_range=True)
             data = cv2.resize(data, [int(size), int(size * data.shape[0]/data.shape[1])], interpolation=cv2.INTER_AREA)
 
         return image_response(
