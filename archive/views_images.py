@@ -8,10 +8,13 @@ from django.conf import settings
 
 from django.db.models import Count
 
-import os, sys, posixpath
+import os, sys, posixpath, io
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from matplotlib.figure import Figure
+from matplotlib.axes import Axes
 from matplotlib import colormaps
+from astropy.visualization import simple_norm, ImageNormalize
+from astropy.visualization.stretch import HistEqStretch
 import numpy as np
 
 import cv2
@@ -26,6 +29,8 @@ from astropy.io import fits
 from astropy.wcs import WCS
 
 from esutil import htm
+
+from stdpipe import cutouts, plots, astrometry
 
 from .models import Images, Calibrations
 from .utils import db_query, memoize
@@ -255,10 +260,31 @@ def image_details(request, id=0):
     return TemplateResponse(request, 'image.html', context=context)
 
 
-def image_response(data, qq=[2.5, 99.75], cmap='Blues_r', quality=75):
+def image_response(data, qq=[2.5, 99.75], stretch=None, cmap='Blues_r', quality=75):
     limits = np.percentile(data[np.isfinite(data)], qq)
 
-    data = (data - limits[0]) / (limits[1] - limits[0])
+    if stretch == 'histeq':
+        norm = ImageNormalize(
+            stretch=HistEqStretch(data),
+            vmin=limits[0],
+            vmax=limits[1],
+        )
+    elif stretch != 'linear':
+        norm = simple_norm(
+            data,
+            stretch,
+            min_cut=limits[0],
+            max_cut=limits[1],
+            power=2,
+        )
+    else:
+        norm = None
+
+    if norm is None:
+        data = (data - limits[0]) / (limits[1] - limits[0])
+    else:
+        data = norm(data)
+
     data = np.clip(data, 0.0, 1.0)
 
     cmap = colormaps[cmap]
@@ -268,6 +294,8 @@ def image_response(data, qq=[2.5, 99.75], cmap='Blues_r', quality=75):
 
     # OpenCV expects BGRA
     data = cv2.cvtColor(data, cv2.COLOR_RGBA2BGRA)
+
+    data = cv2.flip(data, 0)
 
     success, buf = cv2.imencode(
         ".jpg",
@@ -325,15 +353,95 @@ def image_preview(request, id=0, size=0):
     else:
         data,header = calibrate.crop_overscans(data, header, subtract=False)
 
-    if size:
-        data = rescale(data, size/data.shape[1], mode='reflect', anti_aliasing=True, preserve_range=True)
+    if int(request.GET.get('grid', 0)):
+        show_grid = True
+    else:
+        show_grid = False
 
-    response = image_response(
-        data,
-        qq=[2.5, float(request.GET.get('qq', 99.75))],
+    zoom = int(request.GET.get('zoom', 1))
+
+    if show_grid is False and zoom == 1:
+        # Fast OpenCV-based image display
+        if zoom > 1:
+            x0,width = data.shape[1]/2, data.shape[1]
+            y0,height = data.shape[0]/2, data.shape[0]
+
+            x0 += float(request.GET.get('dx', 0)) * width/4
+            y0 += float(request.GET.get('dy', 0)) * height/4
+
+            # TODO: pad with zeros instead?..
+            x1,x2 = max(0, int(x0 - 0.5*width/zoom)), min(int(x0 + 0.5*width/zoom), width)
+            y1,y2 = max(0, int(y0 - 0.5*height/zoom)), min(int(y0 + 0.5*height/zoom), height)
+
+            data = data[y1:y2, x1:x2]
+
+        if size:
+            # data = rescale(data, size/data.shape[1], mode='reflect', anti_aliasing=True, preserve_range=True)
+            data = cv2.resize(data, [int(size), int(size * data.shape[0]/data.shape[1])], interpolation=cv2.INTER_AREA)
+
+        response = image_response(
+            data,
+            stretch=request.GET.get('stretch', 'linear'),
+            qq=[float(request.GET.get('qmin', 0.5)), float(request.GET.get('qmax', 99.5))],
+            cmap=request.GET.get('cmap', 'Blues_r'),
+            quality=int(request.GET.get('quality', 75))
+        )
+
+    # Default STDPipe based imshow
+    figsize = [data.shape[1]*zoom, data.shape[0]*zoom]
+
+    if zoom > 1:
+        x0,dx0 = data.shape[1]/2, data.shape[1]
+        y0,dy0 = data.shape[0]/2, data.shape[0]
+
+        x0 += float(request.GET.get('dx', 0)) * dx0/4
+        y0 += float(request.GET.get('dy', 0)) * dy0/4
+
+        xlim = [x0 - 0.5*dx0/zoom, x0 + 0.5*dx0/zoom]
+        ylim = [y0 - 0.5*dy0/zoom, y0 + 0.5*dy0/zoom]
+    else:
+        xlim = [0, data.shape[1]-1]
+        ylim = [0, data.shape[0]-1]
+
+    if size and figsize[0] != size:
+        figsize[1] = size*figsize[1]/figsize[0]
+        figsize[0] = size
+
+    fig = Figure(dpi=72, figsize=(figsize[0]/72, figsize[1]/72))
+    if show_grid:
+        dx = 40/figsize[0]
+        dy = 20/figsize[1]
+        ax = Axes(fig, [dx, dy, 0.99 - 2*dx, 0.99 - dy])
+        ax.grid(color='white', alpha=0.3)
+    else:
+        # No axes, just the image
+        ax = Axes(fig, [0., 0., 1., 1.])
+
+    fig.add_axes(ax)
+
+    plots.imshow(
+        data, ax=ax, mask=None,
+        show_axis=True if show_grid else False,
+        show_colorbar=True if show_grid else False,
+        origin='lower',
+        interpolation='nearest' if data.shape[1]/zoom < 0.5*size else 'bicubic',
         cmap=request.GET.get('cmap', 'Blues_r'),
-        quality=int(request.GET.get('quality', 75))
+        stretch=request.GET.get('stretch', 'linear'),
+        qq=[float(request.GET.get('qmin', 0.5)), float(request.GET.get('qmax', 99.5))],
+        r0=float(request.GET.get('r0', 0)),
+        # Use fast (approximate) image display
+        max_plot_size=1024, xlim=xlim, ylim=ylim, fast=True
     )
+
+    ax.set_xlim(*xlim)
+    ax.set_ylim(*ylim)
+
+    fmt = 'jpeg'
+    buf = io.BytesIO()
+    fig.savefig(buf, format=fmt, pil_kwargs={'quality':int(request.GET.get('quality', 75))})
+
+    return HttpResponse(buf.getvalue(), content_type='image/%s' % fmt)
+
 
     return response
 
