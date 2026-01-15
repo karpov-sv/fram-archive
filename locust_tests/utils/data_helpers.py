@@ -4,7 +4,110 @@ Data helpers for Locust load testing
 Utilities for selecting test data, generating random parameters, etc.
 """
 import random
+import os
 from typing import List, Dict, Optional
+
+
+# Django ORM support for localhost testing
+_DJANGO_AVAILABLE = False
+_DJANGO_IMAGES_MODEL = None
+
+def _init_django():
+    """Initialize Django ORM if available (for localhost testing)"""
+    global _DJANGO_AVAILABLE, _DJANGO_IMAGES_MODEL
+
+    if _DJANGO_AVAILABLE or _DJANGO_IMAGES_MODEL:
+        return  # Already initialized
+
+    try:
+        # Only try to import Django if we're likely on localhost
+        # Check if DJANGO_SETTINGS_MODULE is set or we can find settings
+        if 'DJANGO_SETTINGS_MODULE' not in os.environ:
+            os.environ["DJANGO_SETTINGS_MODULE"] = "archive.settings"
+
+        import django
+        django.setup()
+        from archive import models
+
+        _DJANGO_IMAGES_MODEL = models.Images
+        _DJANGO_AVAILABLE = True
+        print("✓ Django ORM initialized - using real image IDs from database")
+    except Exception as e:
+        # Django not available or can't connect to DB - use fallback
+        _DJANGO_AVAILABLE = False
+        print(f"✗ Django ORM not available ({e.__class__.__name__}) - using random image IDs")
+
+
+def _fetch_real_image_ids(count: int = 100) -> Optional[List[int]]:
+    """
+    Fetch real image IDs from database using Django ORM
+
+    Args:
+        count: Number of IDs to fetch
+
+    Returns:
+        List of image IDs or None if Django not available
+    """
+    if not _DJANGO_AVAILABLE:
+        _init_django()
+
+    if not _DJANGO_AVAILABLE or _DJANGO_IMAGES_MODEL is None:
+        return None
+
+    try:
+        # Fetch random images from database
+        images = _DJANGO_IMAGES_MODEL.objects.order_by('?')[:count].values_list('id', flat=True)
+        ids = list(images)
+
+        if ids:
+            print(f"✓ Fetched {len(ids)} real image IDs from database (range: {min(ids)}-{max(ids)})")
+            return ids
+        else:
+            print("✗ No images found in database - using random IDs")
+            return None
+    except Exception as e:
+        print(f"✗ Failed to fetch image IDs from database ({e.__class__.__name__}) - using random IDs")
+        return None
+
+
+def _is_localhost(host: Optional[str] = None) -> bool:
+    """
+    Check if we're running against localhost
+
+    Checks both LOCUST_HOST environment variable and the configured environment
+    from locust_tests/config/environments.py. LOCUST_HOST takes precedence.
+
+    Args:
+        host: Host URL to check (defaults to auto-detection)
+
+    Returns:
+        True if host is localhost
+    """
+    def _check_host(h: str) -> bool:
+        """Helper to check if a host string is localhost"""
+        h = h.lower()
+        return 'localhost' in h or '127.0.0.1' in h or h.startswith('http://0.0.0.0')
+
+    # Check explicitly provided host
+    if host is not None:
+        return _check_host(host)
+
+    # Check LOCUST_HOST environment variable (highest priority)
+    env_host = os.getenv('LOCUST_HOST', '')
+    if env_host:
+        return _check_host(env_host)
+
+    # Check configured environment from environments.py
+    try:
+        from locust_tests.config.environments import get_environment
+        env = get_environment()
+        if env and env.host:
+            return _check_host(env.host)
+    except Exception:
+        # If we can't import or get environment, assume not localhost
+        pass
+
+    return False
 
 
 class ImageDataHelper:
@@ -211,17 +314,28 @@ class SearchRadiusHelper:
         return random.uniform(0.001, 0.05)
 
 
-def get_random_image_ids(count: int = 100, id_range: tuple = (1, 10000)) -> List[int]:
+def get_random_image_ids(count: int = 100, id_range: tuple = (1, 10000), force_db: bool = False) -> List[int]:
     """
     Get list of random image IDs
 
+    On localhost (or if force_db=True), fetches real IDs from database via Django ORM.
+    Otherwise, generates random IDs from id_range.
+
     Args:
         count: Number of IDs to generate
-        id_range: Tuple of (min_id, max_id)
+        id_range: Tuple of (min_id, max_id) - used as fallback if DB not available
+        force_db: Force database fetch even if not on localhost
 
     Returns:
         List of random image IDs
     """
+    # Try to fetch real IDs from database if on localhost or forced
+    if force_db or _is_localhost():
+        real_ids = _fetch_real_image_ids(count)
+        if real_ids:
+            return real_ids
+
+    # Fallback to random IDs
     helper = ImageDataHelper(id_range)
     return helper.get_random_ids(count)
 

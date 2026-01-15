@@ -123,6 +123,7 @@ data
 locust_tests/reports/
 tests/benchmarks/*.json
 performance_report.html
+prof/
 
 # IDE
 .vscode/

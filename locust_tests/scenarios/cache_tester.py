@@ -40,7 +40,7 @@ class CacheTesterUser(HttpUser):
 
         # First request (likely cache miss or stale cache)
         start = time.time()
-        with self.client.get(
+        with self.client.get( 
             f"/images/{img_id}/view",
             catch_response=True,
             name="Preview (first)"
@@ -56,7 +56,7 @@ class CacheTesterUser(HttpUser):
 
         # Second request (should be cached)
         start = time.time()
-        with self.client.get(
+        with self.client.get( 
             f"/images/{img_id}/view",
             catch_response=True,
             name="Preview (cached)"
@@ -83,7 +83,7 @@ class CacheTesterUser(HttpUser):
         """Test nights list caching (should be heavily cached)"""
         # First request
         start = time.time()
-        with self.client.get("/nights/", name="Nights (first)") as response:
+        with self.client.get("/nights/", catch_response=True, name="Nights (first)") as response:
             first_time = time.time() - start
             if response.status_code != 200:
                 return
@@ -92,7 +92,7 @@ class CacheTesterUser(HttpUser):
 
         # Second request
         start = time.time()
-        with self.client.get(
+        with self.client.get( 
             "/nights/",
             catch_response=True,
             name="Nights (cached)"
@@ -119,7 +119,7 @@ class CacheTesterUser(HttpUser):
 
         # First request
         start = time.time()
-        with self.client.get(f"/images/{img_id}/full", name="Full (first)") as response:
+        with self.client.get(f"/images/{img_id}/full", catch_response=True, name="Full (first)") as response:
             first_time = time.time() - start
             if response.status_code != 200:
                 return
@@ -128,7 +128,7 @@ class CacheTesterUser(HttpUser):
 
         # Second request
         start = time.time()
-        with self.client.get(
+        with self.client.get( 
             f"/images/{img_id}/full",
             catch_response=True,
             name="Full (cached)"

@@ -41,7 +41,7 @@ class PowerUser(HttpUser):
         """Download full processed image"""
         img_id = random.choice(self.image_ids)
 
-        with self.client.get(
+        with self.client.get( 
             f"/images/{img_id}/full",
             catch_response=True,
             name="Full Image Download"
@@ -56,10 +56,9 @@ class PowerUser(HttpUser):
         """Download raw FITS file"""
         img_id = random.choice(self.image_ids)
 
-        with self.client.get(
-            f"/images/{img_id}/full",
+        with self.client.get(f"/images/{img_id}/full", catch_response=True,
             params={'raw': '1'},
-            catch_response=True,
+            
             name="Raw FITS Download"
         ) as response:
             if response.status_code != 200:
@@ -70,7 +69,7 @@ class PowerUser(HttpUser):
         """Download processed FITS file"""
         img_id = random.choice(self.image_ids)
 
-        with self.client.get(
+        with self.client.get( 
             f"/images/{img_id}/download/processed",
             catch_response=True,
             name="Processed FITS"
@@ -85,7 +84,7 @@ class PowerUser(HttpUser):
         """Get FWHM analysis"""
         img_id = random.choice(self.image_ids)
 
-        with self.client.get(
+        with self.client.get( 
             f"/images/{img_id}/fwhm",
             catch_response=True,
             name="FWHM Analysis"
@@ -100,7 +99,7 @@ class PowerUser(HttpUser):
         """Get background analysis"""
         img_id = random.choice(self.image_ids)
 
-        with self.client.get(
+        with self.client.get( 
             f"/images/{img_id}/bg",
             catch_response=True,
             name="Background Analysis"
@@ -115,7 +114,7 @@ class PowerUser(HttpUser):
         """WCS verification (very expensive)"""
         img_id = random.choice(self.image_ids)
 
-        with self.client.get(
+        with self.client.get( 
             f"/images/{img_id}/wcs",
             catch_response=True,
             name="WCS Verification"
@@ -134,7 +133,7 @@ class PowerUser(HttpUser):
         """Photometric zero point analysis (very expensive)"""
         img_id = random.choice(self.image_ids)
 
-        with self.client.get(
+        with self.client.get( 
             f"/images/{img_id}/zero",
             catch_response=True,
             name="Photometric Calibration"
@@ -153,7 +152,7 @@ class PowerUser(HttpUser):
         """Multi-filter color analysis (very expensive)"""
         img_id = random.choice(self.image_ids)
 
-        with self.client.get(
+        with self.client.get( 
             f"/images/{img_id}/filters",
             catch_response=True,
             name="Filter Analysis"

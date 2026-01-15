@@ -34,7 +34,7 @@ ENVIRONMENTS = {
     ),
     'staging': Environment(
         name='staging',
-        host=os.getenv('STAGING_HOST', 'http://staging.fram.example.com'),
+        host=os.getenv('STAGING_HOST', 'http://localhost:18000'),
         users=50,
         spawn_rate=5,
         run_time='15m',

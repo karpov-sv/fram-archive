@@ -55,10 +55,9 @@ class BrowserUser(HttpUser):
         if random.random() < 0.3:
             params['site'] = SearchParameterHelper.get_random_site()
 
-        with self.client.get(
-            "/nights/",
+        with self.client.get("/nights/", catch_response=True,
             params=params,
-            catch_response=True,
+            
             name="Nights"
         ) as response:
             if response.status_code != 200:
@@ -69,10 +68,9 @@ class BrowserUser(HttpUser):
         """Browse image list with various filters"""
         params = SearchParameterHelper.get_random_search_params()
 
-        with self.client.get(
-            "/images/",
+        with self.client.get("/images/", catch_response=True,
             params=params,
-            catch_response=True,
+            
             name="Image List"
         ) as response:
             if response.status_code not in [200, 302]:
@@ -83,7 +81,7 @@ class BrowserUser(HttpUser):
         """View medium-sized image preview (most common action)"""
         img_id = random.choice(self.image_ids)
 
-        with self.client.get(
+        with self.client.get( 
             f"/images/{img_id}/view",
             catch_response=True,
             name="Image View"
@@ -96,7 +94,7 @@ class BrowserUser(HttpUser):
         """View detailed image information page"""
         img_id = random.choice(self.image_ids)
 
-        with self.client.get(
+        with self.client.get( 
             f"/images/{img_id}/",
             catch_response=True,
             name="Image Details"
@@ -109,7 +107,7 @@ class BrowserUser(HttpUser):
         """Download small preview thumbnail"""
         img_id = random.choice(self.image_ids)
 
-        with self.client.get(
+        with self.client.get( 
             f"/images/{img_id}/preview",
             catch_response=True,
             name="Preview Download"
@@ -122,7 +120,7 @@ class BrowserUser(HttpUser):
         """View full resolution image (less common)"""
         img_id = random.choice(self.image_ids)
 
-        with self.client.get(
+        with self.client.get( 
             f"/images/{img_id}/full",
             catch_response=True,
             name="Full Image"
@@ -150,10 +148,9 @@ class BrowserUser(HttpUser):
         if random.random() < 0.5:
             params['filter'] = SearchParameterHelper.get_random_filter()
 
-        with self.client.get(
-            "/images/",
+        with self.client.get("/images/", catch_response=True,
             params=params,
-            catch_response=True,
+            
             name="Spatial Search"
         ) as response:
             if response.status_code not in [200, 302]:

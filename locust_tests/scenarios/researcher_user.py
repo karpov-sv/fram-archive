@@ -54,10 +54,9 @@ class ResearcherUser(HttpUser):
             params['night1'] = night1
             params['night2'] = night2
 
-        with self.client.get(
-            "/images/",
+        with self.client.get("/images/", catch_response=True,
             params=params,
-            catch_response=True,
+            
             name="Filtered Search"
         ) as response:
             if response.status_code not in [200, 302]:
@@ -80,10 +79,9 @@ class ResearcherUser(HttpUser):
         if random.random() < 0.5:
             search_data['filter'] = SearchParameterHelper.get_random_filter()
 
-        with self.client.post(
-            "/search/",
+        with self.client.post("/search/", catch_response=True,
             data=search_data,
-            catch_response=True,
+            
             name="Coordinate Search"
         ) as response:
             if response.status_code not in [200, 302]:
@@ -105,10 +103,9 @@ class ResearcherUser(HttpUser):
         if random.random() < 0.7:
             params['filter'] = SearchParameterHelper.get_random_filter()
 
-        with self.client.get(
-            "/images/cutouts/",
+        with self.client.get("/images/cutouts/", catch_response=True,
             params=params,
-            catch_response=True,
+            
             name="Cutouts List"
         ) as response:
             if response.status_code != 200:
@@ -129,10 +126,9 @@ class ResearcherUser(HttpUser):
             'sr': sr
         }
 
-        with self.client.get(
-            f"/images/{img_id}/cutout",
+        with self.client.get(f"/images/{img_id}/cutout", catch_response=True,
             params=params,
-            catch_response=True,
+            
             name="Cutout View"
         ) as response:
             # Cutout may fail if image doesn't overlap coordinates
@@ -157,10 +153,9 @@ class ResearcherUser(HttpUser):
         if random.random() < 0.8:
             params['filter'] = random.choice(['B', 'V', 'R', 'I'])
 
-        with self.client.get(
-            "/photometry/json",
+        with self.client.get("/photometry/json", catch_response=True,
             params=params,
-            catch_response=True,
+            
             name="Photometry JSON"
         ) as response:
             if response.status_code != 200:
@@ -181,10 +176,9 @@ class ResearcherUser(HttpUser):
             'name': target['name']
         }
 
-        with self.client.get(
-            "/photometry/lc",
+        with self.client.get("/photometry/lc", catch_response=True,
             params=params,
-            catch_response=True,
+            
             name="Light Curve"
         ) as response:
             if response.status_code != 200:
@@ -204,10 +198,9 @@ class ResearcherUser(HttpUser):
             'sr': sr,
         }
 
-        with self.client.get(
-            "/photometry/text",
+        with self.client.get("/photometry/text", catch_response=True,
             params=params,
-            catch_response=True,
+            
             name="Photometry Text"
         ) as response:
             if response.status_code != 200:
@@ -227,10 +220,9 @@ class ResearcherUser(HttpUser):
             'mode': 'download'
         }
 
-        with self.client.get(
-            f"/images/{img_id}/cutout/download",
+        with self.client.get(f"/images/{img_id}/cutout/download", catch_response=True,
             params=params,
-            catch_response=True,
+            
             name="Cutout Download"
         ) as response:
             # May fail if no overlap
