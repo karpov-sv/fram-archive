@@ -28,17 +28,13 @@ from io import BytesIO
 from astropy.io import fits
 from astropy.wcs import WCS
 
-from esutil import htm
-
-from stdpipe import cutouts, plots, astrometry
+from stdpipe import cutouts, plots, astrometry, photometry, pipeline
 
 from .models import Images, Calibrations
 from .utils import db_query, memoize
 
 # FRAM modules
 from fram import calibrate
-from fram import survey
-from fram import utils
 from fram.fram import Fram, parse_iso_time, get_night
 
 
@@ -549,6 +545,7 @@ def image_analysis(request, id=0, mode='fwhm'):
     header.remove('COMMENT', remove_all=True, ignore_missing=True)
     header.remove('HISTORY', remove_all=True, ignore_missing=True)
 
+    # Preprocess the image
     if image.type not in ['masterdark', 'masterflat', 'dcurrent', 'bias']:
         if image.type not in ['dark', 'zero']:
             cdark = find_calibration_image(image, 'masterdark')
@@ -573,63 +570,70 @@ def image_analysis(request, id=0, mode='fwhm'):
         else:
             data,header = calibrate.crop_overscans(data, header)
 
+    # Actual analysis
+
     if mode == 'zero':
         fig = Figure(facecolor='white', dpi=72, figsize=(16,8), tight_layout=True)
     else:
         fig = Figure(facecolor='white', dpi=72, figsize=(14,12), tight_layout=True)
 
     if mode == 'bg':
-        # Extract the background
-        import sep
-        bg = sep.Background(data.astype(np.double))
+        bg, bg_rms = photometry.get_background(
+            data,
+            method='sep',
+            size=128,
+            get_rms=True,
+        )
 
         ax = fig.add_subplot(111)
-        utils.imshow(bg.back(), ax=ax, origin='lower')
-        ax.set_title('%s - %s %s %s %s - bg mean %.2f median %.2f rms %.2f' % (posixpath.split(filename)[-1], image.site, image.ccd, image.filter, str(image.exposure), np.mean(bg.back()), np.median(bg.back()), np.std(bg.back())))
+        plots.imshow(bg, ax=ax, origin='lower')
+        ax.set_title('%s - %s %s %s %s - bg mean %.2f median %.2f rms %.2f' % (posixpath.split(filename)[-1], image.site, image.ccd, image.filter, str(image.exposure), np.nanmean(bg), np.nanmedian(bg), np.nanmedian(bg_rms)))
 
     elif mode == 'fwhm':
         # Detect objects and plot their FWHM
-        obj = survey.get_objects_sep(data, use_fwhm=True)
+        obj = photometry.get_objects_sep(data, use_fwhm=True, verbose=False)
         idx = obj['flags'] == 0
 
         ax = fig.add_subplot(111)
-        utils.binned_map(obj['x'][idx], obj['y'][idx], obj['fwhm'][idx], bins=16, statistic='median', ax=ax)
-        ax.set_title('%s - %s %s %s %s - half flux diameter mean %.2f median %.2f pix' % (posixpath.split(filename)[-1], image.site, image.ccd, image.filter, str(image.exposure), np.mean(obj['fwhm']), np.median(obj['fwhm'])))
+        plots.binned_map(obj['x'][idx], obj['y'][idx], obj['fwhm'][idx], bins=16, statistic='median', ax=ax)
+        ax.set_title('%s - %s %s %s %s - half flux diameter mean %.2f median %.2f pix' % (posixpath.split(filename)[-1], image.site, image.ccd, image.filter, str(image.exposure), np.nanmean(obj['fwhm']), np.nanmedian(obj['fwhm'])))
 
     elif mode == 'wcs':
-        # Detect objects
-        obj = survey.get_objects_sep(data, use_fwhm=True, verbose=False)
         wcs = WCS(header)
 
-        if wcs is not None:
-            obj['ra'],obj['dec'] = wcs.all_pix2world(obj['x'], obj['y'], 0)
+        if wcs is not None and wcs.is_celestial:
+            # Detect objects
+            obj = photometry.get_objects_sep(data, use_fwhm=True, wcs=wcs, verbose=False)
 
-            pixscale = np.hypot(wcs.pixel_scale_matrix[0,0], wcs.pixel_scale_matrix[0,1])
+            pixscale = astrometry.get_pixscale(wcs=wcs)
 
             # Get stars from catalogue
             fram = Fram()
-            ra0,dec0,sr0 = survey.get_frame_center(header=header)
-            if sr0 < 3.0:
-                cat = fram.get_stars(ra0, dec0, sr0, limit=100000, catalog='atlas', extra=['r > 8 and r < 15'])
-            else:
-                cat = fram.get_stars(ra0, dec0, sr0, limit=100000, extra=['vt > 5 and vt < 11'])
-            x,y = wcs.all_world2pix(cat['ra'], cat['dec'], 0)
+            ra0, dec0, sr0 = astrometry.get_frame_center(wcs=wcs, shape=data.shape)
+            if ra0 is not None and sr0 is not None:
+                if sr0 < 3.0:
+                    cat = fram.get_stars(ra0, dec0, sr0, limit=100000, catalog='atlas', extra=['r > 8 and r < 15'])
+                else:
+                    cat = fram.get_stars(ra0, dec0, sr0, limit=100000, extra=['vt > 5 and vt < 11'])
 
-            sr = 5.0*pixscale*np.median(obj['fwhm'])
+                sr = 5.0 * pixscale * np.nanmedian(obj['fwhm'])
 
-            # Match stars
-            h = htm.HTM(10)
-            m = h.match(obj['ra'],obj['dec'], cat['ra'],cat['dec'], sr, maxmatch=1)
-            oidx = m[0]
-            cidx = m[1]
-            dist = m[2]*3600
+                # Match stars
+                oidx, cidx, dist = astrometry.spherical_match(obj['ra'], obj['dec'], cat['ra'], cat['dec'], sr=sr)
+                if len(dist):
+                    order = np.argsort(dist)
+                    oidx, cidx, dist = oidx[order], cidx[order], dist[order]
+                    _, uniq_idx = np.unique(oidx, return_index=True)
+                    oidx, cidx, dist = oidx[uniq_idx], cidx[uniq_idx], dist[uniq_idx]
 
-            idx = obj['flags'][oidx] == 0
+                dist = dist * 3600
 
-            ax = fig.add_subplot(111)
-            utils.binned_map(obj['x'][oidx][idx], obj['y'][oidx][idx], dist[idx], show_dots=True, bins=16, statistic='median', ax=ax)
+                idx = obj['flags'][oidx] == 0
 
-            ax.set_title('%s - %s %s %s - displacement mean %.1f median %.1f arcsec pixel %.1f arcsec' % (posixpath.split(filename)[-1], image.site, image.ccd, image.filter, np.mean(dist[idx]), np.median(dist[idx]), pixscale*3600))
+                ax = fig.add_subplot(111)
+                plots.binned_map(obj['x'][oidx][idx], obj['y'][oidx][idx], dist[idx], show_dots=True, bins=16, statistic='median', ax=ax)
+
+                ax.set_title('%s - %s %s %s - displacement mean %.1f median %.1f arcsec pixel %.1f arcsec' % (posixpath.split(filename)[-1], image.site, image.ccd, image.filter, np.nanmean(dist[idx]), np.nanmedian(dist[idx]), pixscale*3600))
 
     elif mode == 'filters':
         mask = data > 30000
@@ -638,33 +642,53 @@ def image_analysis(request, id=0, mode='fwhm'):
 
         wcs = WCS(header)
 
-        if wcs is not None:
-            pixscale = np.hypot(wcs.pixel_scale_matrix[0,0], wcs.pixel_scale_matrix[0,1])
+        if wcs is not None and wcs.is_celestial:
+            pixscale = astrometry.get_pixscale(wcs=wcs)
 
             if request.GET.get('aper'):
-                obj = survey.get_objects_sep(data, wcs=wcs, aper=float(request.GET.get('aper')), use_fwhm=False, verbose=False)
+                aper = float(request.GET.get('aper'))
+                obj = photometry.get_objects_sep(data, wcs=wcs, aper=aper, use_fwhm=False, verbose=False, mask=mask)
             else:
-                obj = survey.get_objects_sep(data, wcs=wcs, use_fwhm=True, verbose=False)
+                obj = photometry.get_objects_sep(data, wcs=wcs, use_fwhm=True, verbose=False, mask=mask)
 
             # Get stars from catalogue
             fram = Fram()
-            ra0,dec0,sr0 = survey.get_frame_center(header=header)
-            if 'WF' not in header['CCD_NAME']:
-                cat = fram.get_stars(ra0, dec0, sr0, limit=100000, catalog='atlas', extra=['r < 17'])
-            else:
-                cat = fram.get_stars(ra0, dec0, sr0, limit=100000, extra=['vt > 5 and vt < 11'])
+            ra0, dec0, sr0 = astrometry.get_frame_center(wcs=wcs, shape=data.shape)
+            if ra0 is not None and sr0 is not None:
+                if 'WF' not in header.get('CCD_NAME', ''):
+                    cat = fram.get_stars(ra0, dec0, sr0, limit=100000, catalog='atlas', extra=['r < 17'])
+                else:
+                    cat = fram.get_stars(ra0, dec0, sr0, limit=100000, extra=['vt > 5 and vt < 11'])
 
-            for i,fname in enumerate(['B', 'V', 'R', 'I']):
-                ax = fig.add_subplot(2, 2, i+1)
-                match = survey.match_objects(obj, cat, pixscale*np.median(obj['fwhm']), fname=fname)
-                ax.errorbar(match['cB']-match['cV'], match['Y']-match['YY'], match['tmagerr'], fmt='.', capsize=0, alpha=0.2, color='gray')
-                ax.plot((match['cB']-match['cV'])[match['idx']], (match['Y']-match['YY'])[match['idx']], '.', color='red', label=fname, alpha=1.0)
-                ax.legend()
-                ax.axhline(0, color='black', alpha=0.5)
-                ax.set_xlabel('B-V')
-                ax.set_ylabel('Instr - model')
-                ax.set_xlim(-0.0, 2.0)
-                ax.set_ylim(-1.5, 1.5)
+                sr = pixscale * np.nanmedian(obj['fwhm'])
+
+                for i,fname in enumerate(['B', 'V', 'R', 'I']):
+                    if fname not in cat.colnames:
+                        continue
+
+                    mag_err_col = f"{fname}err"
+                    if mag_err_col not in cat.colnames:
+                        mag_err_col = None
+
+                    ax = fig.add_subplot(2, 2, i+1)
+                    match = pipeline.calibrate_photometry(
+                        obj,
+                        cat,
+                        sr=sr,
+                        order=4,
+                        sn=10,
+                        cat_col_mag=fname,
+                        cat_col_mag_err=mag_err_col,
+                        cat_col_mag1='B',
+                        cat_col_mag2='V',
+                        cat_col_ra='ra',
+                        cat_col_dec='dec',
+                        verbose=False,
+                    )
+                    if match:
+                        plots.plot_photometric_match(match, ax=ax, mode='color')
+                        title = ax.get_title()
+                        ax.set_title(f"{fname} {title}".strip())
 
     elif mode == 'zero':
         mask = data > 30000
@@ -673,48 +697,71 @@ def image_analysis(request, id=0, mode='fwhm'):
 
         wcs = WCS(header)
 
-        if wcs is not None:
-            pixscale = np.hypot(wcs.pixel_scale_matrix[0,0], wcs.pixel_scale_matrix[0,1])
+        if wcs is not None and wcs.is_celestial:
+            pixscale = astrometry.get_pixscale(wcs=wcs)
 
             if request.GET.get('aper'):
-                obj = survey.get_objects_sep(data, wcs=wcs, aper=float(request.GET.get('aper')), use_fwhm=False, verbose=False)
+                aper = float(request.GET.get('aper'))
+                obj = photometry.get_objects_sep(data, wcs=wcs, aper=aper, use_fwhm=False, verbose=False, mask=mask)
             else:
-                obj = survey.get_objects_sep(data, wcs=wcs, use_fwhm=True, verbose=False)
+                obj = photometry.get_objects_sep(data, wcs=wcs, use_fwhm=True, verbose=False, mask=mask)
+
+            aper = obj.meta.get('aper')
 
             # Get stars from catalogue
             fram = Fram()
-            ra0,dec0,sr0 = survey.get_frame_center(header=header)
-            if 'WF' not in header['CCD_NAME']:
-                cat = fram.get_stars(ra0, dec0, sr0, limit=100000, catalog='atlas', extra=['r < 17'])
-            else:
-                cat = fram.get_stars(ra0, dec0, sr0, limit=100000, extra=['vt > 5 and vt < 11'])
+            ra0, dec0, sr0 = astrometry.get_frame_center(wcs=wcs, shape=data.shape)
+            if ra0 is not None and sr0 is not None:
+                if 'WF' not in header.get('CCD_NAME', ''):
+                    cat = fram.get_stars(ra0, dec0, sr0, limit=100000, catalog='atlas', extra=['r < 17'])
+                else:
+                    cat = fram.get_stars(ra0, dec0, sr0, limit=100000, extra=['vt > 5 and vt < 11'])
 
-            match = survey.match_objects(obj, cat, pixscale*np.median(obj['fwhm']), fname=header['FILTER'])
+                sr = pixscale * np.nanmedian(obj['fwhm'])
 
-            ax = fig.add_subplot(321)
-            ax.errorbar(match['cmag'], match['Y']-match['YY'], match['tmagerr'], fmt='.', capsize=0, color='blue', alpha=0.2)
-            ax.plot(match['cmag'][match['idx']], (match['Y']-match['YY'])[match['idx']], '.', color='red', alpha=0.5)
-            ax.axhline(0, ls=':', alpha=0.8, color='black')
-            ax.set_xlabel('Catalogue mag')
-            ax.set_ylabel('Instrumental - Model')
-            ax.set_ylim(-1.5,1.5)
+                filter_key = (header.get('FILTER') or '').strip().upper()
+                if filter_key == 'N':
+                    filter_key = 'R'
+                if filter_key == 'Z':
+                    filter_key = 'z'
 
-            ax = fig.add_subplot(323)
-            ax.errorbar(match['cB']-match['cV'], match['Y']-match['YY'], match['tmagerr'], fmt='.', capsize=0, alpha=0.3)
-            ax.plot((match['cB']-match['cV'])[match['idx']], (match['Y']-match['YY'])[match['idx']], '.', color='red', alpha=0.3)
-            ax.axhline(0, ls=':', alpha=0.8, color='black')
-            ax.set_xlabel('B-V')
-            ax.set_ylabel('Instrumental - Model')
-            ax.set_ylim(-1.5,1.5)
-            ax.set_xlim(-1.0,4)
+                if filter_key in cat.colnames:
+                    mag_err_col = f"{filter_key}err"
+                    if mag_err_col not in cat.colnames:
+                        mag_err_col = None
 
-            ax = fig.add_subplot(325)
-            ax.hist(match['mag'], bins=100)
-            ax.set_xlabel('Catalogue mag')
+                    match = pipeline.calibrate_photometry(
+                        obj,
+                        cat,
+                        sr=sr,
+                        order=4,
+                        sn=10,
+                        cat_col_mag=filter_key,
+                        cat_col_mag_err=mag_err_col,
+                        cat_col_mag1='B',
+                        cat_col_mag2='V',
+                        cat_col_ra='ra',
+                        cat_col_dec='dec',
+                        verbose=False,
+                    )
 
-            ax = fig.add_subplot(122)
-            utils.binned_map(obj['x'][match['oidx']][match['idx']], obj['y'][match['oidx']][match['idx']], match['Y'][match['idx']], bins=8, aspect='equal', ax=ax)
-            ax.set_title('filter %s aper %.1f' % (header['FILTER'], obj['aper']))
+                    if match:
+                        ax = fig.add_subplot(321)
+                        plots.plot_photometric_match(match, ax=ax, mode='mag')
+
+                        ax = fig.add_subplot(323)
+                        plots.plot_photometric_match(match, ax=ax, mode='color')
+
+                        ax = fig.add_subplot(325)
+                        ax.hist(match['cmag'], bins=100)
+                        ax.set_xlabel('Catalogue mag')
+
+                        ax = fig.add_subplot(122)
+                        plots.plot_photometric_match(match, ax=ax, mode='zero', bins=8, aspect='equal')
+                        title = f"filter {filter_key}"
+                        if aper:
+                            title += f" aper {aper:.1f}"
+                        ax.set_title(title)
 
     canvas = FigureCanvas(fig)
 
