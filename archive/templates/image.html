@@ -16,7 +16,7 @@
 
   <div class="text-center">
     <!-- <a href="{% url 'image_full' image.id %}" title="Click for a full-size image" rel="nofollow"> -->
-      <img src="{% url 'image_view' image.id %}" class="img-thumbnail center-block {% if perms.auth.can_analyze_images %}stdview-image{% endif %}" data-stretch=1 data-zoom=1 data-grid=1 />
+      <img src="{% url 'image_view' image.id %}" class="img-thumbnail center-block {% if perms.auth.can_analyze_images %}stdview-image{% endif %}" data-stretch=1 data-zoom=1 data-grid=1 data-raw=1 />
       <!-- </a> -->
   </div>
 

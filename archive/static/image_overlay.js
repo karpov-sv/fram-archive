@@ -131,6 +131,25 @@ overlay_stdview_images = function() {
 
         }
 
+        /* raw */
+        if ('raw' in image.data()) {
+  	    var checkbox = $('<input type="checkbox" id="checkbox_raw"/>');
+            var label = $('<i class="fa fa-file-image-o" style="padding-left: 0.3em;  padding-right: 0.1em;">');
+
+  	    checkbox.on('click', function() {
+    	        if (this.checked)
+      	            update_image_get_params(image, {raw: 1});
+                else
+      	            update_image_get_params(image, {raw: null});
+            });
+
+            checkbox.attr('title', 'Click to show raw image');
+
+  	    overlay.append(label);
+  	    overlay.append(checkbox);
+
+        }
+
         /* objects */
         if ('obj' in image.data()) {
   	    var checkbox = $('<input type="checkbox" id="checkbox_obj"/>');
