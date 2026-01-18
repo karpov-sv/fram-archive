@@ -314,7 +314,7 @@ def image_preview(request, id=0, size=0):
     filename = image.filename
     filename = posixpath.join(settings.BASE_DIR, filename)
 
-    data = fits.getdata(filename, -1)
+    data = fits.getdata(filename, -1).astype(np.double)
     header = fits.getheader(filename, -1)
 
     if 'size' in request.GET:
