@@ -44,7 +44,7 @@ def timed_find_calibration(image, calib_type, durations):
 
 def timed_load_calibration_data(calibration, durations):
     start = time.perf_counter()
-    data = fits.getdata(calibration.filename, -1)
+    data = fits.getdata(calibration.filename, -1).astype(np.double)
     durations.append(time.perf_counter() - start)
     return data
 
@@ -52,7 +52,7 @@ def timed_load_calibration_data(calibration, durations):
 def load_image_data(image):
     filename = posixpath.join(settings.BASE_DIR, image.filename)
     start = time.perf_counter()
-    data = fits.getdata(filename, -1)
+    data = fits.getdata(filename, -1).astype(np.double)
     header = fits.getheader(filename, -1)
     duration = time.perf_counter() - start
     return data, header, duration
