@@ -112,6 +112,16 @@ PREVIEW_BENCH_ITERS=100 pytest tests/performance/test_endpoint_performance.py -k
 ```
 This monkeypatches FITS loading and overscan cropping, reuses a fixed array, and measures the pure preview/rendering cost for `/full`, `/view` (800px), and `/preview` (128px).
 
+Spatial query benchmark (q3c radial search):
+```bash
+# Standalone CLI benchmark
+python tests/performance/spatial_query_benchmark.py --iterations 100 --min-radius 0.1 --max-radius 20 --limit 100
+
+# Pytest wrapper with env controls
+SPATIAL_BENCH_ITERS=100 SPATIAL_BENCH_MIN_RADIUS=0.1 SPATIAL_BENCH_MAX_RADIUS=20 SPATIAL_BENCH_LIMIT=100 pytest tests/performance/test_spatial_query_performance.py -m slow -s
+```
+This measures database time for `q3c_radial_query` using random sky centers and a radius uniformly sampled between the bounds.
+
 #### 3. Query Efficiency Tests
 
 ```bash
