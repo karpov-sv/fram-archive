@@ -9,8 +9,56 @@ Tests response time thresholds for all endpoints by category:
 """
 import pytest
 import time
+import numpy as np
+import os
 
 from tests.conftest import assert_time_under
+
+
+def run_synthetic_preview_benchmark(
+    client,
+    test_image_id,
+    monkeypatch,
+    path,
+    label,
+):
+    from archive import views_images
+
+    synthetic_size = 4096
+    rng = np.random.default_rng(0)
+    synthetic_data = rng.normal(
+        loc=1000.0,
+        scale=100.0,
+        size=(synthetic_size, synthetic_size),
+    ).astype(np.float32)
+    synthetic_header = {}
+
+    def fake_getdata(filename, ext):
+        return synthetic_data
+
+    def fake_getheader(filename, ext):
+        return synthetic_header
+
+    def fake_crop_overscans(data, header, subtract=True, cfg=None):
+        return data, header
+
+    monkeypatch.setattr(views_images.fits, "getdata", fake_getdata)
+    monkeypatch.setattr(views_images.fits, "getheader", fake_getheader)
+    monkeypatch.setattr(views_images.calibrate, "crop_overscans", fake_crop_overscans)
+
+    iterations = int(os.getenv("PREVIEW_BENCH_ITERS", "1"))
+    durations = []
+    response = None
+
+    for _ in range(iterations):
+        start = time.perf_counter()
+        response = client.get(path, {"raw": "1"})
+        durations.append(time.perf_counter() - start)
+
+    mean_ms = (sum(durations) / len(durations)) * 1000.0
+    print(f"\n{label} x{iterations}: {mean_ms:.1f}ms mean")
+
+    assert response is not None and response.status_code == 200
 
 
 @pytest.mark.performance
@@ -257,6 +305,55 @@ class TestExpensiveEndpoints:
         if response.status_code == 200:
             assert elapsed < 5.0, \
                 f"Cutout generation took {elapsed:.3f}s, expected <5s"
+
+
+@pytest.mark.performance
+@pytest.mark.slow
+@pytest.mark.django_db(databases=['fram', 'default'])
+class TestSyntheticImagePreview:
+    """Benchmark image_preview without FITS I/O using synthetic data"""
+
+    def test_image_preview_raw_synthetic_full(self, client, test_image_id, monkeypatch):
+        """Raw preview path with synthetic 4096x4096 image"""
+        if test_image_id is None:
+            pytest.skip("No test image available")
+
+        path = f"/images/{test_image_id}/full"
+        run_synthetic_preview_benchmark(
+            client,
+            test_image_id,
+            monkeypatch,
+            path,
+            "Synthetic raw full preview (4096x4096)",
+        )
+
+    def test_image_preview_raw_synthetic_view(self, client, test_image_id, monkeypatch):
+        """Raw view path with synthetic 4096x4096 image"""
+        if test_image_id is None:
+            pytest.skip("No test image available")
+
+        path = f"/images/{test_image_id}/view"
+        run_synthetic_preview_benchmark(
+            client,
+            test_image_id,
+            monkeypatch,
+            path,
+            "Synthetic raw view preview (800px)",
+        )
+
+    def test_image_preview_raw_synthetic_preview(self, client, test_image_id, monkeypatch):
+        """Raw preview path with synthetic 4096x4096 image"""
+        if test_image_id is None:
+            pytest.skip("No test image available")
+
+        path = f"/images/{test_image_id}/preview"
+        run_synthetic_preview_benchmark(
+            client,
+            test_image_id,
+            monkeypatch,
+            path,
+            "Synthetic raw preview (128px)",
+        )
 
 
 @pytest.mark.performance

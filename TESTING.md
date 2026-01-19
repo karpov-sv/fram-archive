@@ -105,6 +105,13 @@ Validates response time thresholds:
 - Expensive endpoints (1-5s): analysis, photometry
 - Very expensive (5-20s): WCS, zero point, filters
 
+Synthetic preview benchmark (no FITS I/O, raw path only):
+```bash
+# Benchmark full/view/preview sizes with synthetic 4096x4096 data
+PREVIEW_BENCH_ITERS=100 pytest tests/performance/test_endpoint_performance.py -k synthetic -m slow -s
+```
+This monkeypatches FITS loading and overscan cropping, reuses a fixed array, and measures the pure preview/rendering cost for `/full`, `/view` (800px), and `/preview` (128px).
+
 #### 3. Query Efficiency Tests
 
 ```bash
