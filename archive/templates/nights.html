@@ -6,7 +6,9 @@
 {% block ptitle %}Nights : FRAM Archive {% endblock %}
 
 {% block title %}
-{% if single_night %}
+{% if object_query %}
+  Images for: {{ object_query }}
+{% elif single_night %}
   Night {{ night }}
 {% else %}
   Nights
@@ -47,9 +49,36 @@
 
   </div>
 
+  {% if not night %}
+    <form class="form" method="get">
+      <div class="row justify-content-center mb-2 g-2">
+        <div class="col-md">
+          <input
+          type="text"
+          class="form-control form-control-sm"
+          name="object"
+          value="{{ object_query }}"
+          placeholder="Target name or target id"
+          >
+        </div>
+        <div class="col-md-auto">
+          <button type="submit" class="btn btn-sm btn-primary">Filter</button>
+        </div>
+        {% if object_query %}
+          <div class="col-md-auto">
+            <a class="btn btn-sm btn-secondary" href="?{{ request.GET|GET_remove:"object"|GET_remove:"site"|GET_remove:"ccd"|GET_remove:"page"|GET_urlencode }}" rel="nofollow">Clear</a>
+          </div>
+        {% endif %}
+      </div>
+    </form>
+  {% endif %}
+
   {% if single_night %}
     <table class="table table-striped table-sm">
       <tr>
+        {% if object_mode %}
+          <th>Night</th>
+        {% endif %}
         <th>Site</th>
         <th>CCD</th>
         <th>Target</th>
@@ -59,19 +88,26 @@
         {% endfor %}
       </tr>
       {% for row in night_rows %}
-        <tr{% ifchanged row.site %}{% if not forloop.first %} style="border-top: 3px solid #6c757d;"{% endif %}{% endifchanged %}>
+        <tr{% ifchanged row.site %}{% if not forloop.first %} style="border-top: 2px solid #6c757d;"{% endif %}{% endifchanged %}>
+          {% if object_mode %}
+            <td>
+              <a href="{% url 'night' night=row.night %}" title="Open this night" rel="nofollow">
+                {{ row.night|default:"-" }}
+              </a>
+            </td>
+          {% endif %}
           <td>
-            <a href="{% url 'images' %}?night={{ night }}&site={{ row.site }}" title="Images from this site and night" rel="nofollow">
+            <a href="{% url 'images' %}?{{ row.site_query }}" title="Images from this site" rel="nofollow">
               {{ row.site|default:"-" }}
             </a>
           </td>
           <td>
-            <a href="{% url 'images' %}?night={{ night }}&site={{ row.site }}&ccd={{ row.ccd }}" title="Images from this site, night and camera" rel="nofollow">
+            <a href="{% url 'images' %}?{{ row.ccd_query }}" title="Images from this site and camera" rel="nofollow">
               {{ row.ccd|default:"-" }}
             </a>
           </td>
           <td>
-            <a href="{% url 'images' %}?night={{ night }}&site={{ row.site }}&ccd={{ row.ccd }}&target={{ row.target }}" title="Images from this site, night, camera and target" rel="nofollow">
+            <a href="{% url 'images' %}?{{ row.target_query }}" title="Images from this site, camera and target" rel="nofollow">
               {{ row.target|default:"-" }}
             </a>
           </td>

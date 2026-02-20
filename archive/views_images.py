@@ -97,6 +97,10 @@ def get_images(request):
     if target and target != 'all':
         images = images.filter(target=target)
 
+    object_name = request.GET.get('object')
+    if object_name:
+        images = images.filter(keywords__OBJECT=object_name)
+
     tname = request.GET.get('type')
     if tname and tname != 'all':
         images = images.filter(type=tname)
@@ -516,11 +520,20 @@ def image_download(request, id, raw=True):
 @cache_page(3600)
 @permission_required('auth.can_view_images', raise_exception=True)
 def images_nights(request, night=None):
-    # sites = list(Images.objects.order_by('site').distinct('site').values('site'))
     sites = db_query("select fast_distinct(%s, %s) as site", ('images', 'site'))
+    object_query = (request.GET.get('object') or '').strip()
 
-    if night is not None:
-        images = Images.objects.filter(night=night)
+    if night is not None or object_query:
+        images = Images.objects.filter(night=night) if night is not None else Images.objects.all()
+
+        object_target = None
+        if object_query:
+            try:
+                object_target = int(object_query)
+            except ValueError:
+                images = images.filter(keywords__OBJECT__icontains=object_query)
+            else:
+                images = images.filter(target=object_target)
 
         site = request.GET.get('site')
         if site and site != 'all':
@@ -543,22 +556,62 @@ def images_nights(request, night=None):
             ),
         )
 
-        grouped = images.values('site', 'ccd', 'target', 'keywords__OBJECT', 'filter').annotate(count=Count('id')).order_by('site', 'target', 'ccd', 'keywords__OBJECT', 'filter')
+        object_mode = bool(object_query and night is None)
+        grouped_fields = ['site', 'ccd', 'target', 'keywords__OBJECT', 'filter']
+        grouped_order = ['site', 'target', 'ccd', 'keywords__OBJECT', 'filter']
+        if object_mode:
+            grouped_fields.insert(0, 'night')
+            grouped_order.insert(0, '-night')
+
+        grouped = images.values(*grouped_fields).annotate(count=Count('id')).order_by(*grouped_order)
+
+        base_params = {}
+        if night is not None:
+            base_params['night'] = night
+        elif object_query:
+            if object_target is not None:
+                base_params['target'] = object_target
+            else:
+                base_params['object'] = object_query
 
         night_rows = {}
         for row in grouped:
-            key = (row['site'], row['ccd'], row['target'], row['keywords__OBJECT'])
+            row_night = row.get('night')
+            key = (row_night, row['site'], row['ccd'], row['target'], row['keywords__OBJECT']) if object_mode else (row['site'], row['ccd'], row['target'], row['keywords__OBJECT'])
             if key not in night_rows:
+                row_params = base_params.copy()
+                if row_night is not None:
+                    row_params['night'] = row_night
+
+                site_params = row_params.copy()
+                if row['site'] is not None:
+                    site_params['site'] = row['site']
+
+                ccd_params = site_params.copy()
+                if row['ccd'] is not None:
+                    ccd_params['ccd'] = row['ccd']
+
+                target_params = ccd_params.copy()
+                if row['target'] is not None:
+                    target_params['target'] = row['target']
+
                 night_rows[key] = {
+                    'night': row_night,
                     'site': row['site'],
                     'ccd': row['ccd'],
                     'target': row['target'],
                     'object': row['keywords__OBJECT'],
+                    'section': row_night if object_mode else row['site'],
+                    'site_query': urlencode(site_params),
+                    'ccd_query': urlencode(ccd_params),
+                    'target_query': urlencode(target_params),
                     'filter_counts': {},
                     'filter_queries': {},
                 }
 
-            params = {'night': night}
+            params = base_params.copy()
+            if row_night is not None:
+                params['night'] = row_night
             if row['site'] is not None:
                 params['site'] = row['site']
             if row['ccd'] is not None:
@@ -573,7 +626,9 @@ def images_nights(request, night=None):
 
         context = {
             'night': night,
+            'object_query': object_query,
             'single_night': True,
+            'object_mode': object_mode,
             'night_rows': list(night_rows.values()),
             'sites': sites,
             'ccds': ccds,
@@ -590,16 +645,18 @@ def images_nights(request, night=None):
 
         grouped = {}
         for row in nights:
-            night = row['night']
-            if night not in grouped:
-                grouped[night] = {'night': night, 'counts': {}}
-            grouped[night]['counts'][row['site']] = row['count']
+            row_night = row['night']
+            if row_night not in grouped:
+                grouped[row_night] = {'night': row_night, 'counts': {}}
+            grouped[row_night]['counts'][row['site']] = row['count']
 
         context = {
             'nights': list(grouped.values()),
             'sites': sites,
             'table_sites': table_sites,
+            'object_query': object_query,
             'single_night': False,
+            'object_mode': False,
         }
 
     return TemplateResponse(request, 'nights.html', context=context)
