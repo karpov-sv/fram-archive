@@ -33,14 +33,24 @@ Nights
   <table class="table table-striped table-sm">
     <tr>
       <th>Night</th>
-      <th>Site</th>
-      <th>Number of images</th>
+      {% for site in table_sites %}
+        <th class="text-center text-uppercase">{{ site }}</th>
+      {% endfor %}
     </tr>
     {% for night in nights %}
       <tr>
         <td><a href="{% url 'images' %}?night={{ night.night }}" title="All images from this night" rel="nofollow"><i class="fa fa-list"></i> {{ night.night }}</a></td>
-        <td><a href="{% url 'nights' %}?site={{ night.site }}" title="This site only" rel="nofollow">{{ night.site }}</a></td>
-        <td><a href="{% url 'images' %}?night={{ night.night }}&site={{ night.site }}" title="Images from this site and night" rel="nofollow">{{ night.count }}</a></td>
+        {% for site in table_sites %}
+          {% with count=night.counts|get:site %}
+            <td class="text-center">
+              {% if count %}
+                <a href="{% url 'images' %}?night={{ night.night }}&site={{ site }}" title="Images from this site and night" rel="nofollow">{{ count }}</a>
+              {% else %}
+                -
+              {% endif %}
+            </td>
+          {% endwith %}
+        {% endfor %}
       </tr>
     {% endfor %}
   </table>

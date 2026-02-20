@@ -513,17 +513,27 @@ def image_download(request, id, raw=True):
 @cache_page(3600)
 @permission_required('auth.can_view_images', raise_exception=True)
 def images_nights(request):
-    # nights = Images.objects.order_by('-night').values('night').annotate(count=Count('night'))
-    nights = Images.objects.values('night','site').annotate(count=Count('id')).order_by('-night','site')
+    nights = Images.objects.values('night', 'site').annotate(count=Count('id')).order_by('-night', 'site')
 
     site = request.GET.get('site')
     if site and site != 'all':
         nights = nights.filter(site=site)
 
-    context = {'nights':nights}
+    sites = list(Images.objects.order_by('site').distinct('site').values('site'))
+    table_sites = [site] if site and site != 'all' else [s['site'] for s in sites]
 
-    sites = Images.objects.distinct('site').values('site')
-    context['sites'] = sites
+    grouped = {}
+    for row in nights:
+        night = row['night']
+        if night not in grouped:
+            grouped[night] = {'night': night, 'counts': {}}
+        grouped[night]['counts'][row['site']] = row['count']
+
+    context = {
+        'nights': list(grouped.values()),
+        'sites': sites,
+        'table_sites': table_sites,
+    }
 
     return TemplateResponse(request, 'nights.html', context=context)
 
