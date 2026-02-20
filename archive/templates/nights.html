@@ -59,7 +59,7 @@
         {% endfor %}
       </tr>
       {% for row in night_rows %}
-        <tr>
+        <tr{% ifchanged row.site %}{% if not forloop.first %} style="border-top: 3px solid #6c757d;"{% endif %}{% endifchanged %}>
           <td>
             <a href="{% url 'images' %}?night={{ night }}&site={{ row.site }}" title="Images from this site and night" rel="nofollow">
               {{ row.site|default:"-" }}
