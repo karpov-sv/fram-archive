@@ -9,6 +9,7 @@ from django.conf import settings
 from django.db.models import Count
 
 import os, sys, posixpath, io
+from urllib.parse import urlencode
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.axes import Axes
@@ -512,28 +513,92 @@ def image_download(request, id, raw=True):
 
 @cache_page(3600)
 @permission_required('auth.can_view_images', raise_exception=True)
-def images_nights(request):
-    nights = Images.objects.values('night', 'site').annotate(count=Count('id')).order_by('-night', 'site')
+def images_nights(request, night=None):
+    # sites = list(Images.objects.order_by('site').distinct('site').values('site'))
+    sites = db_query("select fast_distinct(%s, %s) as site", ('images', 'site'))
 
-    site = request.GET.get('site')
-    if site and site != 'all':
-        nights = nights.filter(site=site)
+    if night is not None:
+        images = Images.objects.filter(night=night)
 
-    sites = list(Images.objects.order_by('site').distinct('site').values('site'))
-    table_sites = [site] if site and site != 'all' else [s['site'] for s in sites]
+        site = request.GET.get('site')
+        if site and site != 'all':
+            images = images.filter(site=site)
 
-    grouped = {}
-    for row in nights:
-        night = row['night']
-        if night not in grouped:
-            grouped[night] = {'night': night, 'counts': {}}
-        grouped[night]['counts'][row['site']] = row['count']
+        ccds = list(images.order_by('ccd').distinct('ccd').values('ccd'))
+        ccd = request.GET.get('ccd')
+        if ccd and ccd != 'all':
+            images = images.filter(ccd=ccd)
 
-    context = {
-        'nights': list(grouped.values()),
-        'sites': sites,
-        'table_sites': table_sites,
-    }
+        # Full list of known filters for dynamic columns
+        filters = db_query("select fast_distinct(%s, %s) as filter", ('images', 'filter'))
+        preferred_filters = ['n', 'b', 'v', 'r', 'i', 'z', 'df']
+        preferred_index = {name: i for i, name in enumerate(preferred_filters)}
+        table_filters = sorted(
+            [f['filter'] for f in filters if f.get('filter') is not None],
+            key=lambda value: (
+                preferred_index.get(str(value).lower(), len(preferred_filters)),
+                str(value).lower(),
+            ),
+        )
+
+        grouped = images.values('site', 'ccd', 'target', 'keywords__OBJECT', 'filter').annotate(count=Count('id')).order_by('site', 'target', 'ccd', 'keywords__OBJECT', 'filter')
+
+        night_rows = {}
+        for row in grouped:
+            key = (row['site'], row['ccd'], row['target'], row['keywords__OBJECT'])
+            if key not in night_rows:
+                night_rows[key] = {
+                    'site': row['site'],
+                    'ccd': row['ccd'],
+                    'target': row['target'],
+                    'object': row['keywords__OBJECT'],
+                    'filter_counts': {},
+                    'filter_queries': {},
+                }
+
+            params = {'night': night}
+            if row['site'] is not None:
+                params['site'] = row['site']
+            if row['ccd'] is not None:
+                params['ccd'] = row['ccd']
+            if row['target'] is not None:
+                params['target'] = row['target']
+            if row['filter'] is not None:
+                params['filter'] = row['filter']
+
+            night_rows[key]['filter_counts'][row['filter']] = row['count']
+            night_rows[key]['filter_queries'][row['filter']] = urlencode(params)
+
+        context = {
+            'night': night,
+            'single_night': True,
+            'night_rows': list(night_rows.values()),
+            'sites': sites,
+            'ccds': ccds,
+            'table_filters': table_filters,
+        }
+
+    else:
+        nights = Images.objects.values('night', 'site').annotate(count=Count('id')).order_by('-night', 'site')
+        site = request.GET.get('site')
+        if site and site != 'all':
+            nights = nights.filter(site=site)
+
+        table_sites = [site] if site and site != 'all' else [s['site'] for s in sites]
+
+        grouped = {}
+        for row in nights:
+            night = row['night']
+            if night not in grouped:
+                grouped[night] = {'night': night, 'counts': {}}
+            grouped[night]['counts'][row['site']] = row['count']
+
+        context = {
+            'nights': list(grouped.values()),
+            'sites': sites,
+            'table_sites': table_sites,
+            'single_night': False,
+        }
 
     return TemplateResponse(request, 'nights.html', context=context)
 
