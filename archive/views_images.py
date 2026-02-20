@@ -220,6 +220,8 @@ def images_cutouts(request):
 
     context['images'] = images
 
+    context['cutouts'] = True
+
     return TemplateResponse(request, 'images_cutouts.html', context=context)
 
 

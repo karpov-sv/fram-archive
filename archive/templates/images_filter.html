@@ -145,4 +145,14 @@
     </nav>
   {% endif %}
 
+  {% if not cutouts %}
+    <nav class="col-md-auto">
+      <ul class="pagination pagination-sm justify-content-center">
+        <li class="page-item disabled"><span class="page-link">Previews:</span></li>
+        <li class="page-item {% if request.GET.preview %}active{% endif %}"><a class="page-link" href="?{{ request.GET|GET_append:"preview"|GET_urlencode }}" rel="nofollow">Show</a></li>
+        <li class="page-item {% if not request.GET.preview %}active{% endif %}"><a class="page-link" href="?{{ request.GET|GET_remove:"preview"|GET_urlencode }}" rel="nofollow">Hide</a></li>
+      </ul>
+    </nav>
+  {% endif %}
+
 </div>

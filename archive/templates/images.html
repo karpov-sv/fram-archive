@@ -39,7 +39,9 @@
       <th>Exposure</th>
       <th>Target</th>
       <th>RA Dec</th>
-      <th style="width: 140px">Preview</th>
+      {% if request.GET.preview %}
+        <th style="width: 140px">Preview</th>
+      {% endif %}
       <!-- <th></th> -->
     </tr>
     {% for image in images %}
@@ -68,17 +70,27 @@
         <td>{{ image.exposure }}{% if image.binning != '1x1' %} / {{ image.binning }}{% endif %}</td>
 
         {% with text="target="|addstr:image.target %}
-          <td><a href="?{{ request.GET|GET_remove:"target"|GET_append:text|GET_urlencode }}" title="{{ image.keywords.OBJECT }}" rel="nofollow">{{ image.target }}</a></td>
+          <td>
+            <a href="?{{ request.GET|GET_remove:"target"|GET_append:text|GET_urlencode }}" title="{{ image.keywords.OBJECT }}" rel="nofollow">{{ image.target }}</a>
+            {% if True %}
+              :
+              <a href="?{{ request.GET|GET_remove:"target"|GET_append:text|GET_urlencode }}" title="{{ image.keywords.OBJECT }}" rel="nofollow">
+                {{ image.keywords.OBJECT }}
+              </a>
+            {% endif %}
+          </td>
         {% endwith %}
 
         <td title="Alt/Az {{ image.keywords.TEL_ALT }} {{ image.keywords.TEL_AZ }}">{{ image.ra|floatformat:3 }} {{ image.dec|floatformat:3 }}</td>
 
-        <td>
-          <a href="{% url 'image_details' image.id %}" title="View image details" rel="nofollow">
-            <img src="{% url 'image_preview' image.id %}" class="img-thumbnail">
-          </a>
-        </td>
-        <!-- <td><a href="{% url 'image_download' image.id %}" title="Download FITS"><i class="fa fa-download"></i> </a></td> -->
+        {% if request.GET.preview %}
+          <td>
+            <a href="{% url 'image_details' image.id %}" title="View image details" rel="nofollow">
+              <img src="{% url 'image_preview' image.id %}" class="img-thumbnail">
+            </a>
+          </td>
+          <!-- <td><a href="{% url 'image_download' image.id %}" title="Download FITS"><i class="fa fa-download"></i> </a></td> -->
+        {% endif %}
       </tr>
     {% endfor %}
   </table>
