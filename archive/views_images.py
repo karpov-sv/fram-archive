@@ -531,7 +531,7 @@ def images_nights(request, night=None):
             try:
                 object_target = int(object_query)
             except ValueError:
-                images = images.filter(keywords__OBJECT__icontains=object_query)
+                images = images.filter(keywords__OBJECT__istartswith=object_query)
             else:
                 images = images.filter(target=object_target)
 
