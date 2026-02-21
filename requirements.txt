@@ -7,7 +7,6 @@ django-el-pagination
 markdown
 django-debug-toolbar
 django-debug-toolbar-line-profiler
-decouple
 
 scikit-image
 opencv-python
