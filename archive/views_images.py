@@ -937,7 +937,7 @@ def image_analysis(request, id=0, mode='fwhm'):
                         cat_col_ra='ra',
                         cat_col_dec='dec',
                         accept_flags=0x01, max_intrinsic_rms=0.02,
-                        verbose=True,
+                        verbose=False,
                     )
 
                     if match:
