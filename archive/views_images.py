@@ -810,30 +810,61 @@ def image_analysis(request, id=0, mode='fwhm'):
                 if not np.isfinite(fwhm_global):
                     fwhm_global = np.nanmedian(obj['fwhm'])
 
-                sr = 5.0 * pixscale * fwhm_global
+                sr = 2.0 * pixscale * fwhm_global
 
                 # Match stars
-                oidx, cidx, dist = astrometry.spherical_match(obj['ra'], obj['dec'], cat['ra'], cat['dec'], sr=sr)
-                if len(dist):
-                    order = np.argsort(dist)
-                    oidx, cidx, dist = oidx[order], cidx[order], dist[order]
-                    _, uniq_idx = np.unique(oidx, return_index=True)
-                    oidx, cidx, dist = oidx[uniq_idx], cidx[uniq_idx], dist[uniq_idx]
+                filter_key = (header.get('FILTER') or '').strip().upper()
+                if filter_key == 'N':
+                    filter_key = 'R'
+                if filter_key == 'Z':
+                    filter_key = 'z'
 
-                dist = dist * 3600
+                if filter_key in cat.colnames:
+                    mag_err_col = f"{filter_key}err"
+                    if mag_err_col not in cat.colnames:
+                        mag_err_col = None
 
-                idx = obj['flags'][oidx] == 0
+                    match = pipeline.calibrate_photometry(
+                        obj,
+                        cat,
+                        sr=sr,
+                        order=4,
+                        sn=10,
+                        cat_col_mag=filter_key,
+                        cat_col_mag_err=mag_err_col,
+                        cat_col_mag1='B',
+                        cat_col_mag2='V',
+                        cat_col_ra='ra',
+                        cat_col_dec='dec',
+                        # accept_flags=0x01, max_intrinsic_rms=0.02,
+                        verbose=False,
+                    )
 
-                ax = fig.add_subplot(111)
-                plots.binned_map(
-                    obj['x'][oidx][idx], obj['y'][oidx][idx], dist[idx],
-                    show_dots=True,
-                    bins=16,
-                    statistic='median',
-                    ax=ax
-                )
+                    if match:
+                        ax = fig.add_subplot(111)
+                        plots.plot_photometric_match(match, ax=ax, mode='dist', show_masked=False)
 
-                ax.set_title('%s - %s %s %s - displacement mean %.1f median %.1f arcsec pixel %.1f arcsec' % (posixpath.split(filename)[-1], image.site, image.ccd, image.filter, np.nanmean(dist[idx]), np.nanmedian(dist[idx]), pixscale*3600))
+                # oidx, cidx, dist = astrometry.spherical_match(obj['ra'], obj['dec'], cat['ra'], cat['dec'], sr=sr)
+                # if len(dist):
+                #     order = np.argsort(dist)
+                #     oidx, cidx, dist = oidx[order], cidx[order], dist[order]
+                #     _, uniq_idx = np.unique(oidx, return_index=True)
+                #     oidx, cidx, dist = oidx[uniq_idx], cidx[uniq_idx], dist[uniq_idx]
+
+                # dist = dist * 3600
+
+                # idx = obj['flags'][oidx] == 0
+
+                # ax = fig.add_subplot(111)
+                # plots.binned_map(
+                #     obj['x'][oidx][idx], obj['y'][oidx][idx], dist[idx],
+                #     show_dots=True,
+                #     bins=16,
+                #     statistic='median',
+                #     ax=ax
+                # )
+
+                # ax.set_title('%s - %s %s %s - displacement mean %.1f median %.1f arcsec pixel %.1f arcsec' % (posixpath.split(filename)[-1], image.site, image.ccd, image.filter, np.nanmean(dist[idx]), np.nanmedian(dist[idx]), pixscale*3600))
 
     elif mode == 'filters':
         wcs = WCS(header)
