@@ -675,6 +675,8 @@ def image_analysis(request, id=0, mode='fwhm'):
     dark = None
     flat = None
 
+    mask = data > 50000 # saturation
+
     # Clean up the header from COMMENT and HISTORY keywords that may break things
     header.remove('COMMENT', remove_all=True, ignore_missing=True)
     header.remove('HISTORY', remove_all=True, ignore_missing=True)
@@ -704,6 +706,10 @@ def image_analysis(request, id=0, mode='fwhm'):
         else:
             data,header = calibrate.crop_overscans(data, header)
 
+        mask = calibrate.crop_overscans(mask, subtract=False)
+        if dark is not None:
+            mask |= dark > np.median(dark) + 10.0*np.std(dark)
+
     # Actual analysis
 
     if mode == 'zero':
@@ -724,20 +730,60 @@ def image_analysis(request, id=0, mode='fwhm'):
         ax.set_title('%s - %s %s %s %s - bg mean %.2f median %.2f rms %.2f' % (posixpath.split(filename)[-1], image.site, image.ccd, image.filter, str(image.exposure), np.nanmean(bg), np.nanmedian(bg), np.nanmedian(bg_rms)))
 
     elif mode == 'fwhm':
-        # Detect objects and plot their FWHM
-        obj = photometry.get_objects_sep(data, use_fwhm=True, verbose=False)
-        idx = obj['flags'] == 0
+        # Detect objects; the returned table now carries both `fwhm` and
+        # `flux_radius` columns (stdpipe >= 0.3).
+        obj = photometry.get_objects_sep(data, fwhm=True, verbose=False)
+
+        # Robust global FWHM via stdpipe's mode-based estimator. Internally
+        # prefers 2*flux_radius and applies S/N + ellipticity + flag cuts.
+        fwhm_global = float(photometry.estimate_fwhm_from_objects(
+            obj,
+            snr_min=10.0,
+            max_ellipticity=0.3,
+            use_flags=True,
+            image_shape=data.shape,
+            verbose=False,
+        ))
+
+        # Half-flux diameter (2*flux_radius) is markedly more stable across
+        # the frame than SEP's Gaussian-core FWHM and is what the upstream
+        # estimator prefers; fall back only if the column is missing.
+        if 'flux_radius' in obj.colnames:
+            values = 2.0 * np.asarray(obj['flux_radius'], dtype=float)
+            label = 'half-flux diameter'
+        else:
+            values = np.asarray(obj['fwhm'], dtype=float)
+            label = 'FWHM'
+
+        # Quality mask mirroring estimate_fwhm_from_objects: unflagged,
+        # round-ish, finite S/N, and within the plausible FWHM range.
+        good = np.asarray(obj['flags']) <= 0x01
+        a = np.asarray(obj['a'], dtype=float)
+        b = np.asarray(obj['b'], dtype=float)
+        with np.errstate(invalid='ignore'):
+            good &= (a > 0) & ((1.0 - b / a) < 0.3)
+        magerr = np.asarray(obj['magerr'], dtype=float)
+        good &= np.isfinite(magerr) & (magerr > 0) & (magerr < 0.1)
+        good &= np.isfinite(values) & (values >= 1.0) & (values < 20.0)
 
         ax = fig.add_subplot(111)
-        plots.binned_map(obj['x'][idx], obj['y'][idx], obj['fwhm'][idx], bins=16, statistic='median', ax=ax)
-        ax.set_title('%s - %s %s %s %s - half flux diameter mean %.2f median %.2f pix' % (posixpath.split(filename)[-1], image.site, image.ccd, image.filter, str(image.exposure), np.nanmean(obj['fwhm']), np.nanmedian(obj['fwhm'])))
+        plots.binned_map(obj['x'][good], obj['y'][good], values[good],
+                         bins=16, statistic='median', ax=ax)
+        ax.set_title(
+            '%s - %s %s %s %s - %s median %.2f mean %.2f robust %.2f pix (n=%d)' % (
+                posixpath.split(filename)[-1], image.site, image.ccd,
+                image.filter, str(image.exposure), label,
+                np.nanmedian(values[good]), np.nanmean(values[good]),
+                fwhm_global, int(good.sum()),
+            )
+        )
 
     elif mode == 'wcs':
         wcs = WCS(header)
 
         if wcs is not None and wcs.is_celestial:
             # Detect objects
-            obj = photometry.get_objects_sep(data, use_fwhm=True, wcs=wcs, verbose=False)
+            obj = photometry.get_objects_sep(data, fwhm=True, wcs=wcs, verbose=False)
 
             pixscale = astrometry.get_pixscale(wcs=wcs)
 
@@ -746,11 +792,25 @@ def image_analysis(request, id=0, mode='fwhm'):
             ra0, dec0, sr0 = astrometry.get_frame_center(wcs=wcs, shape=data.shape)
             if ra0 is not None and sr0 is not None:
                 if sr0 < 3.0:
-                    cat = fram.get_stars(ra0, dec0, sr0, limit=100000, catalog='atlas', extra=['r > 8 and r < 15'])
+                    cat = fram.get_stars(ra0, dec0, sr0, limit=100000, catalog='gaiadr3syn', extra=['r < 15'])
                 else:
-                    cat = fram.get_stars(ra0, dec0, sr0, limit=100000, extra=['vt > 5 and vt < 11'])
+                    cat = fram.get_stars(ra0, dec0, sr0, limit=100000, catalog='gaiadr3syn', extra=['r < 10'])
 
-                sr = 5.0 * pixscale * np.nanmedian(obj['fwhm'])
+                # Robust global FWHM (mode-based, with S/N + ellipticity cuts)
+                # drives the catalogue match radius. Much less sensitive to
+                # galaxies/blends than a plain median over all detections.
+                fwhm_global = float(photometry.estimate_fwhm_from_objects(
+                    obj,
+                    snr_min=10.0,
+                    max_ellipticity=0.3,
+                    use_flags=True,
+                    image_shape=data.shape,
+                    verbose=False,
+                ))
+                if not np.isfinite(fwhm_global):
+                    fwhm_global = np.nanmedian(obj['fwhm'])
+
+                sr = 5.0 * pixscale * fwhm_global
 
                 # Match stars
                 oidx, cidx, dist = astrometry.spherical_match(obj['ra'], obj['dec'], cat['ra'], cat['dec'], sr=sr)
@@ -765,15 +825,17 @@ def image_analysis(request, id=0, mode='fwhm'):
                 idx = obj['flags'][oidx] == 0
 
                 ax = fig.add_subplot(111)
-                plots.binned_map(obj['x'][oidx][idx], obj['y'][oidx][idx], dist[idx], show_dots=True, bins=16, statistic='median', ax=ax)
+                plots.binned_map(
+                    obj['x'][oidx][idx], obj['y'][oidx][idx], dist[idx],
+                    show_dots=True,
+                    bins=16,
+                    statistic='median',
+                    ax=ax
+                )
 
                 ax.set_title('%s - %s %s %s - displacement mean %.1f median %.1f arcsec pixel %.1f arcsec' % (posixpath.split(filename)[-1], image.site, image.ccd, image.filter, np.nanmean(dist[idx]), np.nanmedian(dist[idx]), pixscale*3600))
 
     elif mode == 'filters':
-        mask = data > 30000
-        if dark is not None:
-            mask |= dark > np.median(dark) + 3.0*np.std(dark)
-
         wcs = WCS(header)
 
         if wcs is not None and wcs.is_celestial:
@@ -781,18 +843,18 @@ def image_analysis(request, id=0, mode='fwhm'):
 
             if request.GET.get('aper'):
                 aper = float(request.GET.get('aper'))
-                obj = photometry.get_objects_sep(data, wcs=wcs, aper=aper, use_fwhm=False, verbose=False, mask=mask)
+                obj = photometry.get_objects_sep(data, wcs=wcs, aper=aper, fwhm=False, verbose=False, mask=mask)
             else:
-                obj = photometry.get_objects_sep(data, wcs=wcs, use_fwhm=True, verbose=False, mask=mask)
+                obj = photometry.get_objects_sep(data, wcs=wcs, aper=1, fwhm=True, verbose=False, mask=mask)
 
             # Get stars from catalogue
             fram = Fram()
             ra0, dec0, sr0 = astrometry.get_frame_center(wcs=wcs, shape=data.shape)
             if ra0 is not None and sr0 is not None:
                 if 'WF' not in header.get('CCD_NAME', ''):
-                    cat = fram.get_stars(ra0, dec0, sr0, limit=100000, catalog='atlas', extra=['r < 17'])
+                    cat = fram.get_stars(ra0, dec0, sr0, limit=100000, catalog='gaiadr3syn', extra=['r < 15'])
                 else:
-                    cat = fram.get_stars(ra0, dec0, sr0, limit=100000, extra=['vt > 5 and vt < 11'])
+                    cat = fram.get_stars(ra0, dec0, sr0, limit=100000, catalog='gaiadr3syn', extra=['r > 6', 'r < 10'])
 
                 sr = pixscale * np.nanmedian(obj['fwhm'])
 
@@ -817,18 +879,16 @@ def image_analysis(request, id=0, mode='fwhm'):
                         cat_col_mag2='V',
                         cat_col_ra='ra',
                         cat_col_dec='dec',
+                        # use_color=False,
+                        accept_flags=0x01,
                         verbose=False,
                     )
                     if match:
-                        plots.plot_photometric_match(match, ax=ax, mode='color')
+                        plots.plot_photometric_match(match, ax=ax, mode='color', show_masked=False)
                         title = ax.get_title()
                         ax.set_title(f"{fname} {title}".strip())
 
     elif mode == 'zero':
-        mask = data > 30000
-        if dark is not None:
-            mask |= dark > np.median(dark) + 3.0*np.std(dark)
-
         wcs = WCS(header)
 
         if wcs is not None and wcs.is_celestial:
@@ -836,9 +896,9 @@ def image_analysis(request, id=0, mode='fwhm'):
 
             if request.GET.get('aper'):
                 aper = float(request.GET.get('aper'))
-                obj = photometry.get_objects_sep(data, wcs=wcs, aper=aper, use_fwhm=False, verbose=False, mask=mask)
+                obj = photometry.get_objects_sep(data, wcs=wcs, aper=aper, fwhm=False, verbose=False, mask=mask)
             else:
-                obj = photometry.get_objects_sep(data, wcs=wcs, use_fwhm=True, verbose=False, mask=mask)
+                obj = photometry.get_objects_sep(data, wcs=wcs, aper=1, fwhm=True, verbose=False, mask=mask)
 
             aper = obj.meta.get('aper')
 
@@ -847,11 +907,11 @@ def image_analysis(request, id=0, mode='fwhm'):
             ra0, dec0, sr0 = astrometry.get_frame_center(wcs=wcs, shape=data.shape)
             if ra0 is not None and sr0 is not None:
                 if 'WF' not in header.get('CCD_NAME', ''):
-                    cat = fram.get_stars(ra0, dec0, sr0, limit=100000, catalog='atlas', extra=['r < 17'])
+                    cat = fram.get_stars(ra0, dec0, sr0, limit=100000, catalog='gaiadr3syn', extra=['r < 15'])
                 else:
-                    cat = fram.get_stars(ra0, dec0, sr0, limit=100000, extra=['vt > 5 and vt < 11'])
+                    cat = fram.get_stars(ra0, dec0, sr0, limit=100000, catalog='gaiadr3syn', extra=['r > 6', 'r < 10'])
 
-                sr = pixscale * np.nanmedian(obj['fwhm'])
+                sr = 0.5 * pixscale * np.nanmedian(obj['fwhm'])
 
                 filter_key = (header.get('FILTER') or '').strip().upper()
                 if filter_key == 'N':
@@ -876,15 +936,16 @@ def image_analysis(request, id=0, mode='fwhm'):
                         cat_col_mag2='V',
                         cat_col_ra='ra',
                         cat_col_dec='dec',
-                        verbose=False,
+                        accept_flags=0x01, max_intrinsic_rms=0.02,
+                        verbose=True,
                     )
 
                     if match:
                         ax = fig.add_subplot(321)
-                        plots.plot_photometric_match(match, ax=ax, mode='mag')
+                        plots.plot_photometric_match(match, ax=ax, mode='mag', show_masked=False)
 
                         ax = fig.add_subplot(323)
-                        plots.plot_photometric_match(match, ax=ax, mode='color')
+                        plots.plot_photometric_match(match, ax=ax, mode='color', show_masked=False)
 
                         ax = fig.add_subplot(325)
                         ax.hist(match['cmag'], bins=100)
