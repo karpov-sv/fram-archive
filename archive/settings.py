@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django_fast_count',
     'crispy_forms',
     'crispy_bootstrap5',
     'el_pagination',
