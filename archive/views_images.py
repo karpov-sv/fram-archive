@@ -263,7 +263,7 @@ def image_details(request, id=0):
     return TemplateResponse(request, 'image.html', context=context)
 
 
-def image_response(data, qq=[2.5, 99.75], stretch=None, cmap='Blues_r', quality=75):
+def image_response(data, qq=[2.5, 99.75], stretch='linear', cmap='Blues_r', quality=75):
     limits = np.percentile(data[np.isfinite(data)], qq)
 
     if stretch == 'histeq':
@@ -328,7 +328,7 @@ def image_preview(request, id=0, size=0):
         size = int(request.GET.get('size', 0))
 
     if not 'raw' in request.GET:
-        if image.type not in ['masterdark', 'masterflat', 'bias', 'dcurrent']:
+        if image.type not in ['masterdark', 'masterflat', 'dark', 'bias', 'dcurrent']:
             dark = None
 
             if image.type not in ['dark', 'zero']:
@@ -346,7 +346,7 @@ def image_preview(request, id=0, size=0):
             if dark is not None:
                 data,header = calibrate.calibrate(data, header, dark=dark) # Subtract dark and linearize
 
-                if image.type not in ['flat1']:
+                if image.type not in ['flat']:
                     cflat = find_calibration_image(image, 'masterflat')
                     if cflat is not None:
                         flat = fits.getdata(cflat.filename, -1)
