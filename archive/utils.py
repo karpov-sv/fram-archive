@@ -42,8 +42,6 @@ def db_query(string, params, db='fram', debug=False, simplify=True):
     cursor = connection.cursor()
     result = None
 
-    print('db_query')
-
     if debug:
         print(cursor.mogrify(string, params))
 
