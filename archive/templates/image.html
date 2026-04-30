@@ -16,7 +16,7 @@
 
   <div class="text-center">
     <!-- <a href="{% url 'image_full' image.id %}" title="Click for a full-size image" rel="nofollow"> -->
-      <img src="{% url 'image_view' image.id %}" class="img-thumbnail center-block {% if perms.auth.can_analyze_images %}stdview-image{% endif %}" data-stretch=1 data-zoom=1 data-grid=1 data-raw=1 />
+      <img src="{% url 'image_view' image.id %}" class="img-thumbnail center-block {% if perms.auth.can_analyze_images or True %}stdview-image{% endif %}" data-stretch=1 data-zoom=1 data-grid=1 data-raw=1 />
       <!-- </a> -->
   </div>
 
@@ -28,16 +28,18 @@
     <a href="{% url 'image_download' image.id %}" title="Click to download original file" rel="nofollow"><i class="fa fa-download"></i> Download FITS</a>
     <span> - </span>
     <a href="{% url 'image_download_processed' image.id %}" title="Click to download processed file" rel="nofollow"><i class="fa fa-download"></i> Processed FITS</a>
-    <br>
-    <a href="{% url 'image_bg' image.id %}" title="Click to inspect image background" onClick="return popupImage(event, '{%  url 'image_bg' image.id %}', 'Background', true)" rel="nofollow"><i class="fa fa-map"></i> Background</a>
-    <span> - </span>
-    <a href="{% url 'image_fwhm' image.id %}" title="Click to inspect image FWHM"  onClick="return popupImage(event, '{%  url 'image_fwhm' image.id %}', 'FWHM', true)" rel="nofollow"><i class="fa fa-bullseye"></i> FWHM</a>
-    <span> - </span>
-    <a href="{% url 'image_wcs' image.id %}" title="Click to inspect image WCS" onClick="return popupImage(event, '{%  url 'image_wcs' image.id %}', 'WCS', true)" rel="nofollow"><i class="fa fa-map-marker"></i> WCS</a>
-    <span> - </span>
-    <a href="{% url 'image_filters' image.id %}" title="Click to inspect image filters" onClick="return popupImage(event, '{%  url 'image_filters' image.id %}', 'Filters', true)" rel="nofollow"><i class="fa fa-cubes"></i> Filters</a>
-    <span> - </span>
-    <a href="{% url 'image_zero' image.id %}" title="Click to inspect image ZERO" onClick="return popupImage(event, '{%  url 'image_zero' image.id %}', 'Zero point', true)" rel="nofollow"><i class="fa fa-map-o"></i> Zero point</a>
+    {% if perms.auth.can_analyze_images %}
+      <br>
+      <a href="{% url 'image_bg' image.id %}" title="Click to inspect image background" onClick="return popupImage(event, '{%  url 'image_bg' image.id %}', 'Background', true)" rel="nofollow"><i class="fa fa-map"></i> Background</a>
+      <span> - </span>
+      <a href="{% url 'image_fwhm' image.id %}" title="Click to inspect image FWHM"  onClick="return popupImage(event, '{%  url 'image_fwhm' image.id %}', 'FWHM', true)" rel="nofollow"><i class="fa fa-bullseye"></i> FWHM</a>
+      <span> - </span>
+      <a href="{% url 'image_wcs' image.id %}" title="Click to inspect image WCS" onClick="return popupImage(event, '{%  url 'image_wcs' image.id %}', 'WCS', true)" rel="nofollow"><i class="fa fa-map-marker"></i> WCS</a>
+      <span> - </span>
+      <a href="{% url 'image_filters' image.id %}" title="Click to inspect image filters" onClick="return popupImage(event, '{%  url 'image_filters' image.id %}', 'Filters', true)" rel="nofollow"><i class="fa fa-cubes"></i> Filters</a>
+      <span> - </span>
+      <a href="{% url 'image_zero' image.id %}" title="Click to inspect image zero point" onClick="return popupImage(event, '{%  url 'image_zero' image.id %}', 'Zero point', true)" rel="nofollow"><i class="fa fa-map-o"></i> Zero point</a>
+    {% endif %}
   </div>
 
   <table class="table table-sm table-striped mt-2 mb-4">
@@ -119,23 +121,25 @@
       </td>
     </tr>
 
-    <tr>
-      <td>RA:</td>
-      <td>{{image.ra}}</td>
-    </tr>
-
-    <tr>
-      <td>Dec:</td>
-      <td>{{image.dec}}</td>
-    </tr>
-
-    {% if image.keywords.TEL_ALT %}
+    {% if image.type == 'object' or image.type == 'flat' %}
       <tr>
-        <td>Alt / Az:</td>
-        <td>
-          {{image.keywords.TEL_ALT}} {{image.keywords.TEL_AZ}}
-        </td>
+        <td>RA:</td>
+        <td>{{image.ra}}</td>
       </tr>
+
+      <tr>
+        <td>Dec:</td>
+        <td>{{image.dec}}</td>
+      </tr>
+
+      {% if image.keywords.TEL_ALT %}
+        <tr>
+          <td>Alt / Az:</td>
+          <td>
+            {{image.keywords.TEL_ALT}} {{image.keywords.TEL_AZ}}
+          </td>
+        </tr>
+      {% endif %}
     {% endif %}
 
   </table>
