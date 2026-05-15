@@ -37,6 +37,7 @@ urlpatterns = [
     path(r'stats', views_stats.stats_redirect, name='stats_redirect'),
     path(r'stats/', views_stats.stats, name='stats'),
     path(r'stats/json', views_stats.stats_json, name='stats_json'),
+    path(r'stats/timeline/json', views_stats.stats_timeline_json, name='stats_timeline_json'),
 
     # Nights
     path(r'nights/', views_images.images_nights, name='nights'),

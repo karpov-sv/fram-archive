@@ -63,6 +63,9 @@
   </style>
   <script>
     const statsUrl = "{{ stats_json_url|escapejs }}";
+    const timelineUrl = "{{ timeline_json_url|escapejs }}";
+    let timelineData = {};
+    let timelineGranularity = 'month';
 
     function cssVar(name) {
       return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -158,9 +161,29 @@
       }), plotConfig());
     }
 
-    function renderTimeline(rows) {
+    function setTimelineButtons(granularity) {
+      document.querySelectorAll('[data-timeline-granularity]').forEach(button => {
+        const isActive = button.dataset.timelineGranularity === granularity;
+        button.classList.toggle('active', isActive);
+        button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        button.disabled = false;
+      });
+    }
+
+    function clearTimelineChart(message) {
+      const chart = document.getElementById('timelineChart');
+      Plotly.purge(chart);
+      chart.replaceChildren();
+      if (message) {
+        chart.textContent = message;
+      }
+    }
+
+    function renderTimeline(rows, granularity) {
+      clearTimelineChart();
+
       if (!rows || !rows.length) {
-        document.getElementById('timelineChart').textContent = 'No timeline data';
+        clearTimelineChart('No timeline data');
         return;
       }
 
@@ -185,10 +208,13 @@
         hovertemplate: '%{x}<br>' + site + ': %{y:,} images<extra></extra>',
       }));
 
-      Plotly.newPlot('timelineChart', traces, plotLayout('Images per month', {
+      const title = granularity === 'day' ? 'Images per night' : 'Images per month';
+      const xTitle = granularity === 'day' ? 'Night' : 'Month';
+
+      Plotly.newPlot('timelineChart', traces, plotLayout(title, {
         barmode: 'stack',
         xaxis: {
-          title: {text: 'Month'},
+          title: {text: xTitle},
           showgrid: false,
         },
         yaxis: {
@@ -197,6 +223,38 @@
           rangemode: 'tozero',
         },
       }), plotConfig());
+      setTimelineButtons(granularity);
+    }
+
+    function loadTimeline(granularity) {
+      timelineGranularity = granularity;
+      if (timelineData[granularity]) {
+        renderTimeline(timelineData[granularity], granularity);
+        return;
+      }
+
+      document.querySelectorAll('[data-timeline-granularity]').forEach(button => {
+        button.disabled = true;
+      });
+      clearTimelineChart('Loading timeline...');
+
+      const url = timelineUrl + '?granularity=' + encodeURIComponent(granularity);
+      fetch(url)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('HTTP ' + response.status);
+          }
+          return response.json();
+        })
+        .then(data => {
+          timelineData[granularity] = data.timeline;
+          renderTimeline(data.timeline, granularity);
+        })
+        .catch(error => {
+          console.warn(error);
+          showError('Could not load timeline statistics.');
+          setTimelineButtons(timelineGranularity);
+        });
     }
 
     function renderStats(data) {
@@ -207,7 +265,8 @@
       setText('lastNight', summary.last_night || formatDate(summary.last_time));
       setText('generatedAt', formatDateTime(data.generated_at));
 
-      renderTimeline(data.timeline);
+      timelineData[data.timeline_granularity || 'month'] = data.timeline;
+      renderTimeline(data.timeline, data.timeline_granularity || 'month');
       renderPie('siteChart', 'Sites', data.distributions.sites, 10);
       renderPie('ccdChart', 'CCDs', data.distributions.ccds, 12);
       renderPie('filterChart', 'Filters', data.distributions.filters, 12);
@@ -222,6 +281,14 @@
     }
 
     $(document).ready(function() {
+      document.querySelectorAll('[data-timeline-granularity]').forEach(button => {
+        button.addEventListener('click', () => {
+          if (!button.disabled) {
+            loadTimeline(button.dataset.timelineGranularity);
+          }
+        });
+      });
+
       fetch(statsUrl)
         .then(response => {
           if (!response.ok) {
@@ -270,6 +337,16 @@
   </section>
 
   <section class="mb-4">
+    <div class="d-flex justify-content-end mb-2">
+      <div class="btn-group btn-group-sm" role="group" aria-label="Timeline granularity">
+        <button type="button" class="btn btn-outline-secondary active" data-timeline-granularity="month" aria-pressed="true">
+          Month
+        </button>
+        <button type="button" class="btn btn-outline-secondary" data-timeline-granularity="day" aria-pressed="false">
+          Day
+        </button>
+      </div>
+    </div>
     <div class="stats-chart-frame stats-chart-tall">
       <div id="timelineChart" class="stats-chart"></div>
     </div>

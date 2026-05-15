@@ -13,6 +13,29 @@ from .utils import db_query
 STATS_CACHE_SECONDS = 3600
 
 
+def _timeline(granularity="month"):
+    if granularity == "day":
+        period_sql = "substr(night, 1, 4) || '-' || substr(night, 5, 2) || '-' || substr(night, 7, 2)"
+        group_sql = "night, 1, 2"
+    else:
+        period_sql = "substr(night, 1, 4) || '-' || substr(night, 5, 2) || '-01'"
+        group_sql = "substr(night, 1, 6), 1, 2"
+
+    return db_query(
+        f"""
+        select {period_sql} as period,
+               coalesce(nullif(site::text, ''), 'Unknown') as site,
+               count(*)::bigint as count
+        from images
+        where night is not null
+        group by {group_sql}
+        order by 1, 2
+        """,
+        (),
+        simplify=False,
+    ) or []
+
+
 def _distribution(field):
     if field not in {"site", "ccd", "filter", "type"}:
         raise ValueError(f"Unsupported stats distribution field: {field}")
@@ -79,23 +102,10 @@ def _archive_stats():
         (),
     ) or {}
 
-    timeline = db_query(
-        """
-        select substr(night, 1, 4) || '-' || substr(night, 5, 2) || '-01' as period,
-               coalesce(nullif(site::text, ''), 'Unknown') as site,
-               count(*)::bigint as count
-        from images
-        where night is not null
-        group by substr(night, 1, 6), 1, 2
-        order by 1, 2
-        """,
-        (),
-        simplify=False,
-    ) or []
-
     return {
         "summary": summary,
-        "timeline": timeline,
+        "timeline": _timeline("month"),
+        "timeline_granularity": "month",
         "distributions": {
             "sites": _distribution("site"),
             "ccds": _distribution("ccd"),
@@ -113,7 +123,10 @@ def stats(request):
     return TemplateResponse(
         request,
         "stats.html",
-        context={"stats_json_url": reverse("stats_json")},
+        context={
+            "stats_json_url": reverse("stats_json"),
+            "timeline_json_url": reverse("stats_timeline_json"),
+        },
     )
 
 
@@ -127,3 +140,19 @@ def stats_redirect(request):
 @cache_page(STATS_CACHE_SECONDS)
 def stats_json(request):
     return JsonResponse(_archive_stats())
+
+
+@require_GET
+@permission_required("auth.can_view_images", raise_exception=True)
+@cache_page(STATS_CACHE_SECONDS)
+def stats_timeline_json(request):
+    granularity = request.GET.get("granularity", "month")
+    if granularity not in {"month", "day"}:
+        granularity = "month"
+
+    return JsonResponse({
+        "timeline": _timeline(granularity),
+        "timeline_granularity": granularity,
+        "generated_at": timezone.now(),
+        "cache_seconds": STATS_CACHE_SECONDS,
+    })
