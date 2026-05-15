@@ -115,6 +115,16 @@
     </nav>
   {% endif %}
 
+  {% if request.GET.object %}
+    <nav class="col-md-auto">
+      <ul class="pagination pagination-sm justify-content-center">
+        <li class="page-item disabled"><span class="page-link">Object:</span></li>
+        <li class="page-item active"><span class="page-link">{{ request.GET.object }}</span></li>
+        <li class="page-item"><a class="page-link" href="?{{ request.GET|GET_remove:"object"|GET_urlencode }}" rel="nofollow"><i class="fa fa-close"></i></a></li>
+      </ul>
+    </nav>
+  {% endif %}
+
   {% if request.GET.target %}
     <nav class="col-md-auto">
       <ul class="pagination pagination-sm justify-content-center">

@@ -99,7 +99,8 @@ def get_images(request):
 
     object_name = request.GET.get('object')
     if object_name:
-        images = images.filter(keywords__OBJECT=object_name)
+        # images = images.filter(keywords__OBJECT=object_name)
+        images = images.filter(keywords__OBJECT__istartswith=object_name)
 
     tname = request.GET.get('type')
     if tname and tname != 'all':
