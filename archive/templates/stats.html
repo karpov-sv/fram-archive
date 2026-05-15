@@ -1,0 +1,300 @@
+{% extends "template.html" %}
+
+{% block ptitle %}Stats : FRAM Archive{% endblock %}
+{% block title %}Archive statistics{% endblock %}
+
+{% block head %}
+  <script src="https://cdn.plot.ly/plotly-3.3.0.min.js"></script>
+  <style>
+    .stats-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
+      gap: 0.75rem;
+    }
+
+    .stats-card {
+      border: 1px solid var(--bs-border-color);
+      border-radius: 0.375rem;
+      box-sizing: border-box;
+      min-width: 0;
+      padding: 0.75rem;
+      background: var(--bs-body-bg);
+      overflow: hidden;
+    }
+
+    .stats-label {
+      color: var(--bs-secondary-color);
+      font-size: 0.8rem;
+      line-height: 1.2;
+      text-transform: uppercase;
+    }
+
+    .stats-value {
+      font-size: 1.45rem;
+      font-weight: 600;
+      line-height: 1.2;
+      margin-top: 0.25rem;
+      overflow-wrap: anywhere;
+    }
+
+    .stats-chart-frame {
+      border: 1px solid var(--bs-border-color);
+      border-radius: 0.375rem;
+      box-sizing: border-box;
+      height: 420px;
+      min-width: 0;
+      padding: 0.5rem;
+    }
+
+    .stats-chart-tall {
+      height: 500px;
+    }
+
+    .stats-chart {
+      height: 100%;
+      min-width: 0;
+      width: 100%;
+    }
+
+    .stats-value-datetime {
+      font-size: 1rem;
+      line-height: 1.25;
+    }
+  </style>
+  <script>
+    const statsUrl = "{{ stats_json_url|escapejs }}";
+
+    function cssVar(name) {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+
+    function plotLayout(title, extra) {
+      return Object.assign({
+        title: {text: title},
+        autosize: true,
+        paper_bgcolor: cssVar('--bs-body-bg'),
+        plot_bgcolor: cssVar('--bs-body-bg'),
+        font: {color: cssVar('--bs-body-color'), size: 11},
+        margin: {t: 42, r: 18, b: 72, l: 48},
+        legend: {orientation: 'h', y: -0.24},
+      }, extra || {});
+    }
+
+    function plotConfig() {
+      return {
+        responsive: true,
+        displaylogo: false,
+      };
+    }
+
+    function formatInteger(value) {
+      if (value === null || value === undefined) {
+        return '-';
+      }
+      return Number(value).toLocaleString();
+    }
+
+    function formatDate(value) {
+      if (!value) {
+        return '-';
+      }
+
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return value;
+      }
+      return date.toISOString().slice(0, 10);
+    }
+
+    function formatDateTime(value) {
+      if (!value) {
+        return '-';
+      }
+
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return value;
+      }
+      return date.toLocaleString();
+    }
+
+    function setText(id, value) {
+      document.getElementById(id).textContent = value;
+    }
+
+    function topSlices(rows, maxSlices) {
+      const sorted = [...rows].sort((a, b) => Number(b.count) - Number(a.count));
+      if (sorted.length <= maxSlices) {
+        return sorted;
+      }
+
+      const kept = sorted.slice(0, maxSlices - 1);
+      const otherCount = sorted
+        .slice(maxSlices - 1)
+        .reduce((total, row) => total + Number(row.count), 0);
+
+      kept.push({label: 'Other', count: otherCount});
+      return kept;
+    }
+
+    function renderPie(id, title, rows, maxSlices) {
+      const data = topSlices(rows || [], maxSlices || 12);
+      if (!data.length) {
+        document.getElementById(id).textContent = 'No data';
+        return;
+      }
+
+      Plotly.newPlot(id, [{
+        type: 'pie',
+        labels: data.map(row => row.label),
+        values: data.map(row => row.count),
+        hole: 0.35,
+        textinfo: 'label+percent',
+        hovertemplate: '%{label}<br>%{value:,} images<extra></extra>',
+      }], plotLayout(title, {
+        margin: {t: 42, r: 12, b: 42, l: 12},
+        legend: {orientation: 'h', y: -0.12},
+        showlegend: true,
+      }), plotConfig());
+    }
+
+    function renderTimeline(rows) {
+      if (!rows || !rows.length) {
+        document.getElementById('timelineChart').textContent = 'No timeline data';
+        return;
+      }
+
+      const periods = [...new Set(rows.map(row => row.period))].sort();
+      const sites = [...new Set(rows.map(row => row.site))];
+      const totals = {};
+      const counts = {};
+
+      rows.forEach(row => {
+        totals[row.site] = (totals[row.site] || 0) + Number(row.count);
+        counts[row.period] = counts[row.period] || {};
+        counts[row.period][row.site] = Number(row.count);
+      });
+
+      sites.sort((a, b) => (totals[b] - totals[a]) || a.localeCompare(b));
+
+      const traces = sites.map(site => ({
+        type: 'bar',
+        name: site,
+        x: periods,
+        y: periods.map(period => (counts[period] && counts[period][site]) || 0),
+        hovertemplate: '%{x}<br>' + site + ': %{y:,} images<extra></extra>',
+      }));
+
+      Plotly.newPlot('timelineChart', traces, plotLayout('Images per month', {
+        barmode: 'stack',
+        xaxis: {
+          title: {text: 'Month'},
+          showgrid: false,
+        },
+        yaxis: {
+          title: {text: 'Images'},
+          gridcolor: cssVar('--bs-border-color'),
+          rangemode: 'tozero',
+        },
+      }), plotConfig());
+    }
+
+    function renderStats(data) {
+      const summary = data.summary || {};
+      setText('totalImages', formatInteger(summary.total_images));
+      setText('totalNights', formatInteger(summary.total_nights));
+      setText('firstNight', summary.first_night || formatDate(summary.first_time));
+      setText('lastNight', summary.last_night || formatDate(summary.last_time));
+      setText('generatedAt', formatDateTime(data.generated_at));
+
+      renderTimeline(data.timeline);
+      renderPie('siteChart', 'Sites', data.distributions.sites, 10);
+      renderPie('ccdChart', 'CCDs', data.distributions.ccds, 12);
+      renderPie('filterChart', 'Filters', data.distributions.filters, 12);
+      renderPie('typeChart', 'Image types', data.distributions.types, 12);
+    }
+
+    function showError(message) {
+      const status = document.getElementById('statsStatus');
+      status.classList.remove('d-none', 'alert-secondary');
+      status.classList.add('alert-danger');
+      status.textContent = message;
+    }
+
+    $(document).ready(function() {
+      fetch(statsUrl)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('HTTP ' + response.status);
+          }
+          return response.json();
+        })
+        .then(data => {
+          document.getElementById('statsStatus').classList.add('d-none');
+          renderStats(data);
+        })
+        .catch(error => {
+          console.warn(error);
+          showError('Could not load archive statistics.');
+        });
+    });
+  </script>
+{% endblock %}
+
+{% block content %}
+  <div id="statsStatus" class="alert alert-secondary" role="status">
+    Loading statistics...
+  </div>
+
+  <section class="stats-summary mb-4">
+    <div class="stats-card">
+      <div class="stats-label">Images</div>
+      <div id="totalImages" class="stats-value">-</div>
+    </div>
+    <div class="stats-card">
+      <div class="stats-label">Nights</div>
+      <div id="totalNights" class="stats-value">-</div>
+    </div>
+    <div class="stats-card">
+      <div class="stats-label">First night</div>
+      <div id="firstNight" class="stats-value">-</div>
+    </div>
+    <div class="stats-card">
+      <div class="stats-label">Last night</div>
+      <div id="lastNight" class="stats-value">-</div>
+    </div>
+    <div class="stats-card">
+      <div class="stats-label">Generated at</div>
+      <div id="generatedAt" class="stats-value stats-value-datetime">-</div>
+    </div>
+  </section>
+
+  <section class="mb-4">
+    <div class="stats-chart-frame stats-chart-tall">
+      <div id="timelineChart" class="stats-chart"></div>
+    </div>
+  </section>
+
+  <section class="row g-3">
+    <div class="col-12 col-lg-6">
+      <div class="stats-chart-frame">
+        <div id="siteChart" class="stats-chart"></div>
+      </div>
+    </div>
+    <div class="col-12 col-lg-6">
+      <div class="stats-chart-frame">
+        <div id="ccdChart" class="stats-chart"></div>
+      </div>
+    </div>
+    <div class="col-12 col-lg-6">
+      <div class="stats-chart-frame">
+        <div id="filterChart" class="stats-chart"></div>
+      </div>
+    </div>
+    <div class="col-12 col-lg-6">
+      <div class="stats-chart-frame">
+        <div id="typeChart" class="stats-chart"></div>
+      </div>
+    </div>
+  </section>
+{% endblock %}

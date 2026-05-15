@@ -81,6 +81,12 @@
               <a class="nav-link" href="{% url 'search_photometry' %}" rel="nofollow">Photometry</a>
             </li>
 
+            {% if perms.auth.can_view_images %}
+              <li class="nav-item">
+                <a class="nav-link" href="{% url 'stats' %}" rel="nofollow">Stats</a>
+              </li>
+            {% endif %}
+
           </ul>
 
           <ul class="navbar-nav ms-auto me-2">

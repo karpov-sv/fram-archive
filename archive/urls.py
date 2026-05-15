@@ -24,6 +24,7 @@ from django.contrib.auth import views as auth_views
 from . import views
 from . import views_images
 from . import views_photometry
+from . import views_stats
 
 urlpatterns = [
     # Index
@@ -31,6 +32,11 @@ urlpatterns = [
 
     # Images
     path(r'images/', views_images.images_list, name='images'),
+
+    # Archive statistics
+    path(r'stats', views_stats.stats_redirect, name='stats_redirect'),
+    path(r'stats/', views_stats.stats, name='stats'),
+    path(r'stats/json', views_stats.stats_json, name='stats_json'),
 
     # Nights
     path(r'nights/', views_images.images_nights, name='nights'),
