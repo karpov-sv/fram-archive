@@ -32,7 +32,7 @@ from astropy.wcs import WCS
 from stdpipe import cutouts, plots, astrometry, photometry, pipeline
 
 from .models import Images
-from .utils import db_query
+from .utils import image_stats_distinct
 from .image_data import (
     find_calibration_image,
     load_image_data,
@@ -123,20 +123,16 @@ def images_list(request):
         images = images.extra(where=["q3c_radial_query(ra, dec, %s, %s, %s)"], params=(ra, dec, sr))
 
     # Possible values for fields
-    # types = images.distinct('type').values('type')
-    types = db_query("select fast_distinct(%s, %s) as type", ('images', 'type'))
+    types = image_stats_distinct('type')
     context['types'] = types
 
-    # sites = images.distinct('site').values('site')
-    sites = db_query("select fast_distinct(%s, %s) as site", ('images', 'site'))
+    sites = image_stats_distinct('site')
     context['sites'] = sites
 
-    # ccds = images.distinct('ccd').values('ccd')
-    ccds = db_query("select fast_distinct(%s, %s) as ccd", ('images', 'ccd'))
-    filters = db_query("select fast_distinct(%s, %s) as filter", ('images', 'filter'))
+    ccds = image_stats_distinct('ccd')
+    filters = image_stats_distinct('filter')
     context['ccds'] = ccds
 
-    # filters = images.distinct('filter').values('filter')
     context['filters'] = filters
 
     sort = request.GET.get('sort')
@@ -177,16 +173,13 @@ def images_cutouts(request):
         images = images.extra(where=["q3c_dist(ra, dec, %s, %s) < %s"], params=(ra, dec, maxdist))
 
     # Possible values for fields
-    # sites = images.distinct('site').values('site')
-    sites = db_query("select fast_distinct(%s, %s) as site", ('images', 'site'))
+    sites = image_stats_distinct('site')
     context['sites'] = sites
 
-    # ccds = images.distinct('ccd').values('ccd')
-    ccds = db_query("select fast_distinct(%s, %s) as ccd", ('images', 'ccd'))
+    ccds = image_stats_distinct('ccd')
     context['ccds'] = ccds
 
-    # filters = images.distinct('filter').values('filter')
-    filters = db_query("select fast_distinct(%s, %s) as filter", ('images', 'filter'))
+    filters = image_stats_distinct('filter')
     context['filters'] = filters
 
     sort = request.GET.get('sort')
@@ -443,7 +436,7 @@ def image_download(request, id, raw=True):
 @cache_page(3600)
 @permission_required('auth.can_view_images', raise_exception=True)
 def images_nights(request, night=None):
-    sites = db_query("select fast_distinct(%s, %s) as site", ('images', 'site'))
+    sites = image_stats_distinct('site')
     object_query = (request.GET.get('object') or '').strip()
 
     if night is not None or object_query:
@@ -468,7 +461,7 @@ def images_nights(request, night=None):
             images = images.filter(ccd=ccd)
 
         # Full list of known filters for dynamic columns
-        filters = db_query("select fast_distinct(%s, %s) as filter", ('images', 'filter'))
+        filters = image_stats_distinct('filter')
         preferred_filters = ['n', 'b', 'v', 'r', 'i', 'z', 'df']
         preferred_index = {name: i for i, name in enumerate(preferred_filters)}
         table_filters = sorted(

@@ -9,8 +9,7 @@ from urllib.parse import urlencode
 
 from django.contrib import messages
 
-from .models import Images
-from .utils import redirect_get, db_query
+from .utils import redirect_get, db_query, image_stats_distinct
 
 # FRAM modules
 from fram.resolve import resolve
@@ -22,7 +21,18 @@ from . import forms
 def index(request):
     context = {}
 
-    sites = db_query('select site,count(*),(select night from images where site=i.site order by time desc limit 1) as last, (select night from images where site=i.site order by time asc limit 1) as first from images i group by i.site order by i.site;', (), simplify=False)
+    sites = db_query(
+        '''
+        select site,
+               nimages as count,
+               first_night as first,
+               last_night as last
+        from image_stats_site
+        order by site
+        ''',
+        (),
+        simplify=False,
+    )
 
     context['sites'] = sites
 
@@ -36,20 +46,15 @@ def search(request, mode='images'):
     # Possible values for fields
     # TODO: properly cache these values
 
-    # types = Images.objects.distinct('type').values('type')
-    types = db_query("select fast_distinct(%s, %s) as type", ('images', 'type'))
+    types = image_stats_distinct('type')
 
-    # sites = Images.objects.distinct('site').values('site')
-    sites = db_query("select fast_distinct(%s, %s) as site", ('images', 'site'))
+    sites = image_stats_distinct('site')
 
-    # ccds = Images.objects.distinct('ccd').values('ccd')
-    ccds = db_query("select fast_distinct(%s, %s) as ccd", ('images', 'ccd'))
+    ccds = image_stats_distinct('ccd')
 
-    # serials = Images.objects.distinct('serial').values('serial')
-    serials = db_query("select fast_distinct(%s, %s, 0) as serial", ('images', 'serial'))
+    serials = image_stats_distinct('serial')
 
-    # filters = Images.objects.distinct('filter').values('filter')
-    filters = db_query("select fast_distinct(%s, %s) as filter", ('images', 'filter'))
+    filters = image_stats_distinct('filter')
 
     form = forms.ImagesSearchForm(
         request.POST or None,

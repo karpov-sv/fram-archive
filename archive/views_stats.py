@@ -16,19 +16,16 @@ STATS_CACHE_SECONDS = 3600
 def _timeline(granularity="month"):
     if granularity == "day":
         period_sql = "substr(night, 1, 4) || '-' || substr(night, 5, 2) || '-' || substr(night, 7, 2)"
-        group_sql = "night, 1, 2"
     else:
-        period_sql = "substr(night, 1, 4) || '-' || substr(night, 5, 2) || '-01'"
-        group_sql = "substr(night, 1, 6), 1, 2"
+        period_sql = "substr(month, 1, 4) || '-' || substr(month, 5, 2) || '-01'"
 
     return db_query(
         f"""
         select {period_sql} as period,
                coalesce(nullif(site::text, ''), 'Unknown') as site,
-               count(*)::bigint as count
-        from images
-        where night is not null
-        group by {group_sql}
+               sum(nimages)::bigint as count
+        from image_stats_daily_site
+        group by 1, 2
         order by 1, 2
         """,
         (),
@@ -42,14 +39,10 @@ def _distribution(field):
 
     return db_query(
         f"""
-        select coalesce(nullif(label::text, ''), 'Unknown') as label,
-               count
-        from (
-            select "{field}" as label,
-                   count(*)::bigint as count
-            from images
-            group by "{field}"
-        ) grouped
+        select coalesce(nullif("{field}"::text, ''), 'Unknown') as label,
+               sum(nimages)::bigint as count
+        from image_stats_type
+        group by 1
         order by count desc, label asc
         """,
         (),
@@ -60,44 +53,12 @@ def _distribution(field):
 def _archive_stats():
     summary = db_query(
         """
-        select (select count(*)::bigint from images) as total_images,
-               (
-                   select count(*)::bigint
-                   from (
-                       select night
-                       from images
-                       where night is not null
-                       group by night
-                   ) nights
-               ) as total_nights,
-               (
-                   select time
-                   from images
-                   where time is not null
-                   order by time asc
-                   limit 1
-               ) as first_time,
-               (
-                   select time
-                   from images
-                   where time is not null
-                   order by time desc
-                   limit 1
-               ) as last_time,
-               (
-                   select night
-                   from images
-                   where night is not null
-                   order by night asc
-                   limit 1
-               ) as first_night,
-               (
-                   select night
-                   from images
-                   where night is not null
-                   order by night desc
-                   limit 1
-               ) as last_night
+        select (select sum(nimages)::bigint from image_stats_site) as total_images,
+               (select count(distinct night)::bigint from image_stats_daily_site) as total_nights,
+               (select min(first_time) from image_stats_site) as first_time,
+               (select max(last_time) from image_stats_site) as last_time,
+               (select min(first_night) from image_stats_site) as first_night,
+               (select max(last_night) from image_stats_site) as last_night
         """,
         (),
     ) or {}

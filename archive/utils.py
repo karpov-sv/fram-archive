@@ -69,6 +69,23 @@ def db_query(string, params, db='fram', debug=False, simplify=True):
     return result
 
 
+def image_stats_distinct(field):
+    if field not in {'site', 'ccd', 'serial', 'filter', 'type'}:
+        raise ValueError(f'Unsupported image stats field: {field}')
+
+    return db_query(
+        f'''
+        select "{field}"
+        from image_stats_type
+        where "{field}" is not null
+        group by "{field}"
+        order by "{field}"
+        ''',
+        (),
+        simplify=False,
+    ) or []
+
+
 def redirect_get(url_or_view, *args, **kwargs):
     get_params = kwargs.pop('get', None)
 
