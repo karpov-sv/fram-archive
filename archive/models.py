@@ -130,22 +130,30 @@ class Calibrations(models.Model):
 
 
 class Photometry(models.Model):
-    image = models.IntegerField(blank=True, null=True)
-    night = models.TextField(blank=True, null=True)
+    image = models.ForeignKey(
+        Images,
+        models.DO_NOTHING,
+        db_column='image',
+        blank=True,
+        null=True,
+        related_name='+',
+    )
     time = models.DateTimeField(primary_key=True)
     filter = models.TextField(blank=True, null=True)
-    ccd = models.TextField(blank=True, null=True)
-    site = models.TextField(blank=True, null=True)
     ra = models.FloatField(blank=True, null=True)
     dec = models.FloatField(blank=True, null=True)
     mag = models.FloatField(blank=True, null=True)
     magerr = models.FloatField(blank=True, null=True)
     flags = models.FloatField(blank=True, null=True)
+    mag_color = models.FloatField(blank=True, null=True)
+    color_term = models.FloatField(blank=True, null=True)
     fwhm = models.FloatField(blank=True, null=True)
     std = models.FloatField(blank=True, null=True)
+    zp_std = models.FloatField(blank=True, null=True)
     nstars = models.FloatField(blank=True, null=True)
+    final_frac = models.FloatField(blank=True, null=True)
 
     class Meta:
         managed = False
-        db_table = 'photometry'
+        db_table = 'photometry_all'
         app_label = 'fram'

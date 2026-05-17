@@ -134,7 +134,7 @@ class TestPhotometryQueryOptimization:
             lc = get_lc(request)
             # Force evaluation
             data = list(lc.values_list(
-                'time', 'site', 'ccd', 'filter', 'ra', 'dec',
+                'time', 'image__site', 'image__ccd', 'filter', 'ra', 'dec',
                 'mag', 'magerr', 'flags', 'fwhm', 'std', 'nstars'
             ))
 
@@ -156,7 +156,7 @@ class TestPhotometryQueryOptimization:
         with assert_query_count(1, tolerance=1):
             # This is how views_photometry.py now fetches data
             data = list(lc.values_list(
-                'time', 'site', 'ccd', 'filter', 'ra', 'dec',
+                'time', 'image__site', 'image__ccd', 'filter', 'ra', 'dec',
                 'mag', 'magerr', 'flags', 'fwhm', 'std', 'nstars'
             ))
 
@@ -177,7 +177,7 @@ class TestPhotometryQueryOptimization:
         start = time.perf_counter()
         lc = get_lc(request)
         data = list(lc.values_list(
-            'time', 'site', 'ccd', 'filter', 'ra', 'dec',
+            'time', 'image__site', 'image__ccd', 'filter', 'ra', 'dec',
             'mag', 'magerr', 'flags', 'fwhm', 'std', 'nstars'
         ))
         elapsed = time.perf_counter() - start

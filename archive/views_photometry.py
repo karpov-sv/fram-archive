@@ -41,22 +41,22 @@ def get_lc(request):
 
     night = request.GET.get('night')
     if night and night != 'all':
-        lc = lc.filter(night=night)
+        lc = lc.filter(image__night=night)
 
     night1 = request.GET.get('night1')
     if night1:
-        lc = lc.filter(night__gte=night1)
+        lc = lc.filter(image__night__gte=night1)
 
     night2 = request.GET.get('night2')
     if night2:
-        lc = lc.filter(night__lte=night2)
+        lc = lc.filter(image__night__lte=night2)
 
     # Filter out bad data
-    lc = lc.filter(Q(night__lt='20190216') | Q(night__gt='20190222'))
+    lc = lc.filter(Q(image__night__lt='20190216') | Q(image__night__gt='20190222'))
 
     site = request.GET.get('site')
     if site and site != 'all':
-        lc = lc.filter(site=site)
+        lc = lc.filter(image__site=site)
 
     fname = request.GET.get('filter')
     if fname and fname != 'all':
@@ -64,7 +64,7 @@ def get_lc(request):
 
     ccd = request.GET.get('ccd')
     if ccd and ccd != 'all':
-        lc = lc.filter(ccd=ccd)
+        lc = lc.filter(image__ccd=ccd)
 
     magerr = request.GET.get('magerr')
     if magerr:
@@ -81,7 +81,10 @@ def get_lc(request):
     sr = float(request.GET.get('sr', 0.01))
 
     # Lc with centers within given search radius
-    lc = lc.extra(where=["q3c_radial_query(ra, dec, %s, %s, %s)"], params=(ra, dec, sr))
+    lc = lc.extra(
+        where=['q3c_radial_query("photometry_all"."ra", "photometry_all"."dec", %s, %s, %s)'],
+        params=(ra, dec, sr),
+    )
 
     return lc
 
@@ -90,11 +93,16 @@ def lc(request, mode="jpg", size=800):
     lc = get_lc(request)
 
     # Fetch all data in a single query instead of iterating 10+ times
-    data = list(lc.values_list('time', 'site', 'ccd', 'filter', 'ra', 'dec',
-                                'mag', 'magerr', 'flags', 'fwhm', 'std', 'nstars'))
+    data = list(
+        lc.values_list(
+            'time', 'image__site', 'image__ccd', 'filter', 'ra', 'dec',
+            'mag', 'magerr', 'flags', 'fwhm', 'std', 'nstars',
+            'color_term', 'zp_std', 'final_frac',
+        )
+    )
 
     if data:
-        times, sites, ccds, filters, ras, decs, mags, magerrs, flags, fwhms, stds, nstars = zip(*data)
+        times, sites, ccds, filters, ras, decs, mags, magerrs, flags, fwhms, stds, nstars, color_term, zp_std, final_frac = zip(*data)
         times = np.array(times)
         sites = np.array(sites)
         ccds = np.array(ccds)
@@ -107,8 +115,11 @@ def lc(request, mode="jpg", size=800):
         fwhms = np.array(fwhms)
         stds = np.array(stds)
         nstars = np.array(nstars)
+        color_term = np.array(color_term)
+        zp_std = np.array(zp_std)
+        final_frac = np.array(final_frac)
     else:
-        times = sites = ccds = filters = ras = decs = mags = magerrs = flags = fwhms = stds = nstars = np.array([])
+        times = sites = ccds = filters = ras = decs = mags = magerrs = flags = fwhms = stds = nstars = color_term = zp_std = final_frac = np.array([])
 
     mjds = Time(times).mjd if len(times) else []
 
@@ -142,6 +153,15 @@ def lc(request, mode="jpg", size=800):
 
             for _ in range(3):
                 idx &= fwhms < np.median(fwhms[idx]) + 3.0*mad_std(fwhms[idx])
+
+            for _ in range(3):
+                idx &= np.abs(color_term - np.median(color_term[idx])) < 3.0*mad_std(color_term[idx])
+
+            for _ in range(3):
+                idx &= zp_std < np.median(zp_std[idx]) + 3.0*mad_std(zp_std[idx])
+
+            for _ in range(3):
+                idx &= final_frac > np.median(final_frac[idx]) - 3.0*mad_std(final_frac[idx])
 
             mask |= idx
 

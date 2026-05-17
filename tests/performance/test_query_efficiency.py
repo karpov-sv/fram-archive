@@ -131,7 +131,7 @@ class TestPhotometryQueries:
         # Single query when fetching data with values_list
         with assert_query_count(1, tolerance=1):
             data = list(lc.values_list(
-                'time', 'site', 'ccd', 'filter', 'ra', 'dec',
+                'time', 'image__site', 'image__ccd', 'filter', 'ra', 'dec',
                 'mag', 'magerr', 'flags', 'fwhm', 'std', 'nstars'
             ))
 
@@ -151,7 +151,7 @@ class TestPhotometryQueries:
         # This is the NEW optimized way (single query)
         with assert_query_count(1, tolerance=1):
             data = list(lc.values_list(
-                'time', 'site', 'ccd', 'filter', 'ra', 'dec',
+                'time', 'image__site', 'image__ccd', 'filter', 'ra', 'dec',
                 'mag', 'magerr', 'flags', 'fwhm', 'std', 'nstars'
             ))
 
