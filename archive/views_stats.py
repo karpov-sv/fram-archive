@@ -50,6 +50,27 @@ def _distribution(field):
     ) or []
 
 
+def _configuration_summary():
+    return db_query(
+        """
+        select coalesce(nullif(site::text, ''), 'Unknown') as site,
+               coalesce(nullif(ccd::text, ''), 'Unknown') as ccd,
+               coalesce(serial::text, 'Unknown') as serial,
+               min(night) as first_night,
+               max(night) as last_night,
+               count(*)::bigint as nimages
+        from images
+        group by 1, 2, 3
+        order by site,
+                 ccd,
+                 min(night),
+                 serial
+        """,
+        (),
+        simplify=False,
+    ) or []
+
+
 def _archive_stats():
     summary = db_query(
         """
@@ -87,6 +108,7 @@ def stats(request):
         context={
             "stats_json_url": reverse("stats_json"),
             "timeline_json_url": reverse("stats_timeline_json"),
+            "configuration_json_url": reverse("stats_configuration_json"),
         },
     )
 
@@ -114,6 +136,17 @@ def stats_timeline_json(request):
     return JsonResponse({
         "timeline": _timeline(granularity),
         "timeline_granularity": granularity,
+        "generated_at": timezone.now(),
+        "cache_seconds": STATS_CACHE_SECONDS,
+    })
+
+
+@require_GET
+@permission_required("auth.can_view_images", raise_exception=True)
+@cache_page(STATS_CACHE_SECONDS)
+def stats_configuration_json(request):
+    return JsonResponse({
+        "configuration": _configuration_summary(),
         "generated_at": timezone.now(),
         "cache_seconds": STATS_CACHE_SECONDS,
     })

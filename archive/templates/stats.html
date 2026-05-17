@@ -60,10 +60,27 @@
       font-size: 1rem;
       line-height: 1.25;
     }
+
+    .stats-table-frame {
+      border: 1px solid var(--bs-border-color);
+      border-radius: 0.375rem;
+      overflow-x: auto;
+    }
+
+    .stats-config-table {
+      min-width: 680px;
+    }
+
+    .stats-config-table th,
+    .stats-config-table td {
+      white-space: nowrap;
+    }
   </style>
   <script>
     const statsUrl = "{{ stats_json_url|escapejs }}";
     const timelineUrl = "{{ timeline_json_url|escapejs }}";
+    const configurationUrl = "{{ configuration_json_url|escapejs }}";
+    const imagesUrl = "{% url 'images' %}";
     let timelineData = {};
     let timelineGranularity = 'month';
 
@@ -226,6 +243,117 @@
       setTimelineButtons(granularity);
     }
 
+    function appendCell(row, value, className) {
+      const cell = document.createElement('td');
+      if (className) {
+        cell.className = className;
+      }
+      cell.textContent = value;
+      row.appendChild(cell);
+    }
+
+    function appendLinkCell(row, value, href, className) {
+      const cell = document.createElement('td');
+      if (className) {
+        cell.className = className;
+      }
+
+      if (href && value !== '-' && value !== 'Unknown') {
+        const link = document.createElement('a');
+        link.href = href;
+        link.rel = 'nofollow';
+        link.textContent = value;
+        cell.appendChild(link);
+      } else {
+        cell.textContent = value;
+      }
+
+      row.appendChild(cell);
+    }
+
+    function configurationImagesUrl(item, night) {
+      const params = new URLSearchParams();
+
+      if (item.site && item.site !== 'Unknown') {
+        params.set('site', item.site);
+      }
+      if (item.ccd && item.ccd !== 'Unknown') {
+        params.set('ccd', item.ccd);
+      }
+      if (item.serial && item.serial !== 'Unknown') {
+        params.set('serial', item.serial);
+      }
+      if (night) {
+        params.set('night', night);
+      }
+
+      const query = params.toString();
+      return query ? imagesUrl + '?' + query : imagesUrl;
+    }
+
+    function renderConfiguration(rows) {
+      const body = document.getElementById('configurationTable');
+      body.replaceChildren();
+
+      if (!rows || !rows.length) {
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = 6;
+        cell.className = 'text-muted';
+        cell.textContent = 'No configuration data';
+        row.appendChild(cell);
+        body.appendChild(row);
+        return;
+      }
+
+      let previousSite = null;
+      let previousCcd = null;
+
+      rows.forEach(item => {
+        const row = document.createElement('tr');
+        const site = item.site || 'Unknown';
+        const ccd = item.ccd || 'Unknown';
+        const showSite = site !== previousSite;
+        const showCcd = showSite || ccd !== previousCcd;
+
+        appendCell(row, showSite ? site : '', showSite ? '' : 'text-muted');
+        appendCell(row, showCcd ? ccd : '', showCcd ? '' : 'text-muted');
+        appendCell(row, item.serial || 'Unknown');
+        appendLinkCell(
+          row,
+          item.first_night || '-',
+          configurationImagesUrl(item, item.first_night)
+        );
+        appendLinkCell(
+          row,
+          item.last_night || '-',
+          configurationImagesUrl(item, item.last_night)
+        );
+        appendLinkCell(
+          row,
+          formatInteger(item.nimages),
+          configurationImagesUrl(item),
+          'text-end'
+        );
+
+        body.appendChild(row);
+        previousSite = site;
+        previousCcd = ccd;
+      });
+    }
+
+    function setConfigurationMessage(message, className) {
+      const body = document.getElementById('configurationTable');
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      body.replaceChildren();
+      cell.colSpan = 6;
+      cell.className = className || 'text-muted';
+      cell.textContent = message;
+      row.appendChild(cell);
+      body.appendChild(row);
+    }
+
     function loadTimeline(granularity) {
       timelineGranularity = granularity;
       if (timelineData[granularity]) {
@@ -273,6 +401,25 @@
       renderPie('typeChart', 'Image types', data.distributions.types, 12);
     }
 
+    function loadConfiguration() {
+      setConfigurationMessage('Loading configuration...');
+
+      fetch(configurationUrl)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('HTTP ' + response.status);
+          }
+          return response.json();
+        })
+        .then(data => {
+          renderConfiguration(data.configuration);
+        })
+        .catch(error => {
+          console.warn(error);
+          setConfigurationMessage('Could not load configuration statistics.', 'text-danger');
+        });
+    }
+
     function showError(message) {
       const status = document.getElementById('statsStatus');
       status.classList.remove('d-none', 'alert-secondary');
@@ -304,6 +451,8 @@
           console.warn(error);
           showError('Could not load archive statistics.');
         });
+
+      loadConfiguration();
     });
   </script>
 {% endblock %}
@@ -372,6 +521,29 @@
       <div class="stats-chart-frame">
         <div id="typeChart" class="stats-chart"></div>
       </div>
+    </div>
+  </section>
+
+  <section class="mt-4 mb-4">
+    <h4 class="mb-3">Camera configuration</h4>
+    <div class="stats-table-frame">
+      <table class="table table-sm table-striped table-hover align-middle mb-0 stats-config-table">
+        <thead>
+          <tr>
+            <th scope="col">Site</th>
+            <th scope="col">CCD</th>
+            <th scope="col">Serial</th>
+            <th scope="col">First night</th>
+            <th scope="col">Last night</th>
+            <th scope="col" class="text-end">Images</th>
+          </tr>
+        </thead>
+        <tbody id="configurationTable">
+          <tr>
+            <td colspan="6" class="text-muted">Loading configuration...</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </section>
 {% endblock %}
