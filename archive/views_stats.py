@@ -53,18 +53,49 @@ def _distribution(field):
 def _configuration_summary():
     return db_query(
         """
-        select coalesce(nullif(site::text, ''), 'Unknown') as site,
-               coalesce(nullif(ccd::text, ''), 'Unknown') as ccd,
-               coalesce(serial::text, 'Unknown') as serial,
+        with nightly as (
+            select coalesce(nullif(site::text, ''), 'Unknown') as site,
+                   coalesce(nullif(ccd::text, ''), 'Unknown') as ccd,
+                   coalesce(serial::text, 'Unknown') as serial,
+                   night,
+                   min(time) as first_time,
+                   count(*)::bigint as nimages
+            from images
+            group by 1, 2, 3, 4
+        ),
+        ordered as (
+            select *,
+                   case
+                       when serial is distinct from lag(serial) over (
+                           partition by site, ccd
+                           order by night nulls last, first_time nulls last, serial
+                       )
+                       then 1 else 0
+                   end as starts_segment
+            from nightly
+        ),
+        segmented as (
+            select *,
+                   sum(starts_segment) over (
+                       partition by site, ccd
+                       order by night nulls last, first_time nulls last, serial
+                       rows unbounded preceding
+                   ) as segment_id
+            from ordered
+        )
+        select site,
+               ccd,
+               serial,
                min(night) as first_night,
                max(night) as last_night,
-               count(*)::bigint as nimages
-        from images
-        group by 1, 2, 3
+               sum(nimages)::bigint as nimages
+        from segmented
+        group by site, ccd, segment_id, serial
         order by site,
                  ccd,
-                 min(night),
-                 serial
+                 min(night) nulls last,
+                 min(first_time) nulls last,
+                 segment_id
         """,
         (),
         simplify=False,

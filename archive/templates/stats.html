@@ -285,6 +285,13 @@
       }
       if (night) {
         params.set('night', night);
+      } else {
+        if (item.first_night) {
+          params.set('night1', item.first_night);
+        }
+        if (item.last_night) {
+          params.set('night2', item.last_night);
+        }
       }
 
       const query = params.toString();
@@ -525,7 +532,7 @@
   </section>
 
   <section class="mt-4 mb-4">
-    <h4 class="mb-3">Camera configuration</h4>
+    <h4 class="mb-3">Camera configuration timeline</h4>
     <div class="stats-table-frame">
       <table class="table table-sm table-striped table-hover align-middle mb-0 stats-config-table">
         <thead>
