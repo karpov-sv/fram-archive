@@ -149,19 +149,19 @@ def lc(request, mode="jpg", size=800):
             idx = idx0 & (filters == fn)
 
             for _ in range(3):
-                idx &= stds < np.median(stds[idx]) + 3.0*mad_std(stds[idx])
+                idx &= stds <= np.median(stds[idx]) + 3.0*mad_std(stds[idx])
 
             for _ in range(3):
-                idx &= fwhms < np.median(fwhms[idx]) + 3.0*mad_std(fwhms[idx])
+                idx &= fwhms <= np.median(fwhms[idx]) + 3.0*mad_std(fwhms[idx])
 
             for _ in range(3):
-                idx &= np.abs(color_term - np.median(color_term[idx])) < 3.0*mad_std(color_term[idx])
+                idx &= np.abs(color_term - np.median(color_term[idx])) <= 3.0*mad_std(color_term[idx])
 
             for _ in range(3):
-                idx &= zp_std < np.median(zp_std[idx]) + 3.0*mad_std(zp_std[idx])
+                idx &= zp_std <= np.median(zp_std[idx]) + 3.0*mad_std(zp_std[idx])
 
             for _ in range(3):
-                idx &= final_frac > np.median(final_frac[idx]) - 3.0*mad_std(final_frac[idx])
+                idx &= final_frac >= np.median(final_frac[idx]) - 3.0*mad_std(final_frac[idx])
 
             mask |= idx
 
