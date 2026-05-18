@@ -105,7 +105,15 @@
 
   {% if not lc %}
     <div class="form-text text-muted">
-      It will extract all photometric measurements for the specified sky point, within the search radius.<br>
+      Extract photometric measurements around the specified sky point. The center field accepts sky coordinates
+      or a resolvable object name, and the radius selects matching measurements around that position. Photometry
+      searches default to 3 arcsec when no radius is provided, and submitted radii are limited to 5 arcmin.<br>
+      Use the site, CCD, camera serial, filter, target ID, and night range fields to narrow the source images.
+      Night values use <code>YYYYMMDD</code>. Leave quality cuts enabled for the cleaned light curve, or select
+      <i>Disable quality cuts</i> to include all matching measurements.<br>
+      The result view groups points by filter in an interactive light-curve plot with error bars and hover
+      details. It also provides full and filtered text downloads, plus quick links to SIMBAD, AAVSO VSX, NSVS,
+      ASAS-SN, and Aladin for the query position.
     </div>
   {% endif %}
 

@@ -13,8 +13,15 @@
   {% crispy form %}
 
   <div class="form-text text-muted">
-    It will return cutouts of all object images containing the specified sky point, with the size defined by the search radius.<br>
-    <i>Max Dist</i> parameter defines the maximal acceptable distance from frame center, and may be useful to skip the images where cutout center is in the frame corners where distortions are significant.
+    Return cutouts from all images that contain the specified sky point. The center field accepts sky
+    coordinates or a resolvable object name, and the radius controls the cutout size. Cutout searches default
+    to 10 arcmin when no radius is provided, and submitted radii are limited to 1 degree.<br>
+    Use the site, CCD, camera serial, filter, target ID, and night range fields to narrow the image set.
+    Night values use <code>YYYYMMDD</code>. The <i>Max distance</i> field limits the allowed distance from the
+    frame center in degrees, which can be useful for avoiding frame corners where distortions are larger.<br>
+    On the results page, active filters are shown as removable controls, table values can be clicked to refine
+    the result set, the single-page control toggles pagination, and each row provides a preview plus a FITS
+    download link for the cutout.
   </div>
 
 {% endblock %}

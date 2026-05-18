@@ -114,13 +114,19 @@ def images_list(request):
     if request.GET.get('ra') and request.GET.get('dec'):
         ra = float(request.GET.get('ra'))
         dec = float(request.GET.get('dec'))
-        sr = float(request.GET.get('sr', 0))
         context['ra'] = ra
         context['dec'] = dec
-        context['sr'] = sr
 
-        # Images with centers within given search radius
-        images = images.extra(where=["q3c_radial_query(ra, dec, %s, %s, %s)"], params=(ra, dec, sr))
+        sr = float(request.GET.get('sr', 0))
+        if sr:
+            # Images with centers within given search radius
+            images = images.extra(where=["q3c_radial_query(ra, dec, %s, %s, %s)"], params=(ra, dec, sr))
+            context['sr'] = sr
+        else:
+            # Images covering given point
+            images = images.extra(where=["q3c_radial_query(ra, dec, %s, %s, radius)"], params=(ra, dec))
+            # images = images.extra(select={'dist': "q3c_dist(ra, dec, %s, %s)"}, select_params=(ra,dec))
+            images = images.extra(where=["q3c_poly_query(%s, %s, footprint10)"], params=(ra, dec))
 
     # Possible values for fields
     types = image_stats_distinct('type')

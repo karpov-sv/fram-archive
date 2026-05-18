@@ -13,8 +13,15 @@
   {% crispy form %}
 
   <div class="form-text text-muted">
-    It will search the database of all images - object frames, dark/flat calibrations etc.<br>
-    If the position and radius are specified, only images with their centers located within this distance from query position are returned.<br>
+    Search all archived images, including object frames and calibration frames such as darks and flats.
+    The center field accepts sky coordinates or a resolvable object name. With a radius, the result includes
+    images whose frame centers are within that distance from the query position; without a radius, it includes
+    images covering the query position.<br>
+    Use the site, CCD, camera serial, filter, image type, target ID, night range, and filename fields to narrow
+    the search. Night values use <code>YYYYMMDD</code>. Filename searches match any part of the filename; include
+    SQL <code>%</code> wildcards for an explicit pattern.<br>
+    On the results page, active filters are shown as removable controls, table values can be clicked to refine
+    the result set, and the preview control toggles image thumbnails.
   </div>
 
 {% endblock %}
