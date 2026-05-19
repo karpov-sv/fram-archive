@@ -1,0 +1,79 @@
+{% extends "template.html" %}
+
+{% block ptitle %}Sky View : FRAM Archive{% endblock %}
+{% block title %}
+  Sky View from FRAM Widefield Cameras
+{% endblock %}
+
+{% block head %}
+  <script type="text/javascript" src="https://aladin.cds.unistra.fr/AladinLite/api/v3/latest/aladin.js" charset="utf-8"></script>
+  <style>
+    .sky-view {
+      height: calc(100vh - 11rem);
+      min-height: 520px;
+     /* margin-left: calc(50% - 50vw + 1rem); */
+     /* margin-right: calc(50% - 50vw + 1rem); */
+    }
+
+    #aladin-lite-div {
+      height: 100%;
+      width: 100%;
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+  {{ hips_surveys|json_script:"hips-surveys" }}
+  {{ default_survey|json_script:"default-survey" }}
+
+  <div class="sky-view">
+    <div id="aladin-lite-div"></div>
+  </div>
+
+  <script type="text/javascript">
+    const hipsSurveys = JSON.parse(document.getElementById('hips-surveys').textContent);
+    const defaultSurvey = JSON.parse(document.getElementById('default-survey').textContent);
+    const hipsList = hipsSurveys.map((survey) => ({
+      id: survey.id,
+      name: survey.name,
+      url: survey.url,
+      cooFrame: 'equatorial',
+    }));
+
+    A.init.then(() => {
+      A.aladin('#aladin-lite-div', {
+        survey: defaultSurvey.id,
+        hipsList: hipsList,
+        mode: 'light',
+        fov: 5,
+        target: 'M45',
+        projection: 'SIN',
+        cooFrame: 'equatorial',
+        showCooGrid: false,
+        showCooGridControl: true,
+        showLayersControl: true,
+        showSettingsControl: true,
+        showSimbadPointerControl: true,
+      });
+    });
+  </script>
+
+  <div class="mt-2">
+    <p>
+      The page shows the all-sky mosaic constructed from the images from FRAM CTA-N, CTA-S0 and CTA-S1 wide-field cameras.
+      The mosaic is a stack of abour 450,000 images, 15x15 degrees each, acquired over three years (2018-2021) from three
+      sites (La Palma and two places at Paranal). It is stored in <a href=https://aladin.cds.unistra.fr/hips/"">Hierarchical Progressive Survey</a>
+      (HiPS) format, and is generated with Hipsgen.jar.
+    </p>
+    <p>
+      There are four HiPS stacks made from FRAM images:
+      <ul>
+        {% for h in hips_surveys %}
+          <li><b>{{ h.name }}</b> - <a href="{{ h.url }}">{{ h.url }}</a></li>
+        {% endfor %}
+      </ul>
+      All stacks except for color one are available in both FITS and PNG formats.
+    </p>
+  </div>
+
+{% endblock %}

@@ -32,6 +32,7 @@ urlpatterns = [
 
     # Images
     path(r'images/', views_images.images_list, name='images'),
+    path(r'sky/', views.sky_view, name='sky_view'),
 
     # Archive statistics
     path(r'stats', views_stats.stats_redirect, name='stats_redirect'),
