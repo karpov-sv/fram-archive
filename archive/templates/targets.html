@@ -2,6 +2,7 @@
 
 {% load el_pagination_tags %}
 {% load filters %}
+{% load tags %}
 
 {% block ptitle %}Targets : FRAM Archive {% endblock %}
 
@@ -94,20 +95,20 @@
     {% for target in targets %}
       <tr>
         <td>
-          <a href="{% url 'nights' %}?object={{ target.target }}" title="Per-night stats for this target" rel="nofollow">
+          <a href="{% url 'nights' %}?{% encode_params object=target.target ccd=request.GET.ccd %}" title="Per-night stats for this target" rel="nofollow">
             <i class="fa fa-list"></i> {{ target.target }}
           </a>
         </td>
         {% if table_sites|length > 1 %}
           <td class="text-center">
-            <a href="{% url 'images' %}?target={{ target.target }}" title="All images for this target" rel="nofollow">{{ target.total }}</a>
+            <a href="{% url 'images' %}?{% encode_params target=target.target ccd=request.GET.ccd %}" title="All images for this target" rel="nofollow">{{ target.total }}</a>
           </td>
         {% endif %}
         {% for site in table_sites %}
           {% with count=target.counts|get:site %}
             <td class="text-center">
               {% if count %}
-                <a href="{% url 'images' %}?target={{ target.target }}&site={{ site }}" title="Images from this site and target" rel="nofollow">{{ count }}</a>
+                <a href="{% url 'images' %}?{% encode_params target=target.target site=site ccd=request.GET.ccd %}" title="Images from this site and target" rel="nofollow">{{ count }}</a>
               {% else %}
                 -
               {% endif %}

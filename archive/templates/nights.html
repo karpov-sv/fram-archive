@@ -2,6 +2,7 @@
 
 {% load el_pagination_tags %}
 {% load filters %}
+{% load tags %}
 
 {% block ptitle %}Nights : FRAM Archive {% endblock %}
 
@@ -146,7 +147,7 @@
             {% with count=night.counts|get:site %}
               <td class="text-center">
                 {% if count %}
-                  <a href="{% url 'images' %}?night={{ night.night }}&site={{ site }}" title="Images from this site and night" rel="nofollow">{{ count }}</a>
+                  <a href="{% url 'images' %}?{% encode_params night=night.night site=site ccd=request.GET.ccd %}" title="Images from this site and night" rel="nofollow">{{ count }}</a>
                 {% else %}
                   -
                 {% endif %}

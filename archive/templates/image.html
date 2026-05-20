@@ -61,26 +61,26 @@
 
     <tr><td>Time:</td><td>{{image.time|date:"Y-m-d H:i:s"}} UT</td></tr>
 
-    <tr><td>Night:</td><td><a href="{% url 'images' %}?night={{ image.night }}" title="All images from this night" rel="nofollow">{{image.night}}</a></td></tr>
+    <tr><td>Night:</td><td><a href="{% url 'images' %}?{% encode_params night=image.night %}" title="All images from this night" rel="nofollow">{{image.night}}</a></td></tr>
 
     <tr>
       <td>Site:</td>
       <td>
-        <a href="{% url 'images' %}?night={{ image.night }}&site={{ image.site }}" title="All images from this night and site" rel="nofollow">{{image.site}}
+        <a href="{% url 'images' %}?{% encode_params night=image.night site=image.site %}" title="All images from this night and site" rel="nofollow">{{image.site}}
       </td>
     </tr>
 
     <tr>
       <td>CCD:</td>
       <td>
-        <a href="{% url 'images' %}?night={{ image.night }}&site={{ image.site }}&ccd={{ image.ccd }}" title="All images from this night and site and ccd">{{image.ccd}}</a> / <a href="{% url 'images' %}?night={{ image.night }}&site={{ image.site }}&ccd={{ image.ccd }}&serial={{ image.serial }}" title="All images from this night and site and ccd" rel="nofollow">{{ image.serial }}</a>
+        <a href="{% url 'images' %}?{% encode_params night=image.night site=image.site ccd=image.ccd %}" title="All images from this night and site and ccd">{{image.ccd}}</a> / <a href="{% url 'images' %}?{% encode_params night=image.night site=image.site ccd=image.ccd serial=image.serial %}" title="All images from this night and site and ccd" rel="nofollow">{{ image.serial }}</a>
       </td>
     </tr>
 
     <tr>
       <td>Type:</td>
       <td>
-        <a href="{% url 'images' %}?night={{ image.night }}&site={{ image.site }}&ccd={{ image.ccd }}&type={{ image.type }}" title="All images from this night and site and ccd of this type" rel="nofollow">{{ image.type }}
+        <a href="{% url 'images' %}?{% encode_params night=image.night site=image.site ccd=image.ccd type=image.type %}" title="All images from this night and site and ccd of this type" rel="nofollow">{{ image.type }}
       </td>
     </tr>
 
@@ -109,14 +109,14 @@
     <tr>
       <td>Filter:</td>
       <td>
-        <a href="{% url 'images' %}?night={{ image.night }}&site={{ image.site }}&ccd={{ image.ccd }}&filter={{ image.filter }}" title="All images from this night and site and ccd in this filter" rel="nofollow">{{  image.filter }}
+        <a href="{% url 'images' %}?{% encode_params night=image.night site=image.site ccd=image.ccd filter=image.filter %}" title="All images from this night and site and ccd in this filter" rel="nofollow">{{  image.filter }}
       </td>
     </tr>
 
     <tr>
       <td>Target:</td>
       <td>
-        <a href="{% url 'images' %}?night={{ image.night }}&site={{ image.site }}&ccd={{ image.ccd }}&target={{ image.target }}" title="All images from this night and site and ccd in this target" rel="nofollow">{{  image.target }}
+        <a href="{% url 'images' %}?{% encode_params night=image.night site=image.site ccd=image.ccd target=image.target %}" title="All images from this night and site and ccd in this target" rel="nofollow">{{  image.target }}
           {% if image.keywords.OBJECT %}/ {{ image.keywords.OBJECT }}{% endif %}
       </td>
     </tr>
