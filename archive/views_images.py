@@ -32,7 +32,7 @@ from astropy.wcs import WCS
 from stdpipe import cutouts, plots, astrometry, photometry, pipeline
 
 from .models import Images
-from .utils import image_stats_distinct
+from .utils import db_query, image_stats_distinct
 from .image_data import (
     find_calibration_image,
     load_image_data,
@@ -441,8 +441,88 @@ def image_download(request, id, raw=True):
 
 @cache_page(3600)
 @permission_required('auth.can_view_images', raise_exception=True)
+def images_targets(request):
+    sites = image_stats_distinct('site')
+    ccds = image_stats_distinct('ccd')
+    object_query = (request.GET.get('object') or '').strip()
+
+    where = ['target IS NOT NULL']
+    params = []
+
+    if not request.GET.get('all'):
+        where.append('type = %s')
+        params.append('object')
+
+    if object_query:
+        try:
+            object_target = int(object_query)
+        except ValueError:
+            # where.append("coalesce(keywords->>'OBJECT', '') ilike %s")
+            where.append("UPPER(keywords->>'OBJECT'::text) LIKE UPPER(%s)")
+            params.append(object_query + '%')
+        else:
+            where.append('target = %s')
+            params.append(object_target)
+
+    site = request.GET.get('site')
+    if site and site != 'all':
+        where.append('site = %s')
+        params.append(site)
+    ccd = request.GET.get('ccd')
+    if ccd and ccd != 'all':
+        where.append('ccd = %s')
+        params.append(ccd)
+
+    table_sites = [site] if site and site != 'all' else [s['site'] for s in sites]
+
+    target_counts = db_query(
+        f'''
+        SELECT target, site, count, total
+        FROM (
+            SELECT target,
+                   site,
+                   COUNT(*) as count,
+                   SUM(COUNT(*)) OVER (PARTITION BY target) AS total
+            FROM images
+            WHERE {' and '.join(where)}
+            GROUP BY target, site
+        ) targets
+        ORDER BY total desc, target, site
+        ''',
+        tuple(params),
+        simplify=False,
+    ) or []
+
+    grouped = {}
+    for row in target_counts:
+        target = row['target']
+        if target not in grouped:
+            grouped[target] = {
+                'target': target,
+                'total': row['total'],
+                'counts': {},
+            }
+
+        grouped[target]['counts'][row['site']] = row['count']
+
+    targets = list(grouped.values())
+
+    context = {
+        'targets': targets,
+        'sites': sites,
+        'ccds': ccds,
+        'table_sites': table_sites,
+        'object_query': object_query,
+    }
+
+    return TemplateResponse(request, 'targets.html', context=context)
+
+
+@cache_page(3600)
+@permission_required('auth.can_view_images', raise_exception=True)
 def images_nights(request, night=None):
     sites = image_stats_distinct('site')
+    ccds = image_stats_distinct('ccd')
     object_query = (request.GET.get('object') or '').strip()
 
     if night is not None or object_query:
@@ -461,7 +541,7 @@ def images_nights(request, night=None):
         if site and site != 'all':
             images = images.filter(site=site)
 
-        ccds = list(images.order_by('ccd').distinct('ccd').values('ccd'))
+        # ccds = list(images.order_by('ccd').distinct('ccd').values('ccd'))
         ccd = request.GET.get('ccd')
         if ccd and ccd != 'all':
             images = images.filter(ccd=ccd)
@@ -563,6 +643,10 @@ def images_nights(request, night=None):
         if site and site != 'all':
             nights = nights.filter(site=site)
 
+        ccd = request.GET.get('ccd')
+        if ccd and ccd != 'all':
+            nights = nights.filter(ccd=ccd)
+
         table_sites = [site] if site and site != 'all' else [s['site'] for s in sites]
 
         grouped = {}
@@ -575,6 +659,7 @@ def images_nights(request, night=None):
         context = {
             'nights': list(grouped.values()),
             'sites': sites,
+            'ccds': ccds,
             'table_sites': table_sites,
             'object_query': object_query,
             'single_night': False,

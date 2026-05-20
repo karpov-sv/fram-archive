@@ -44,6 +44,7 @@ urlpatterns = [
     # Nights
     path(r'nights/', views_images.images_nights, name='nights'),
     path(r'nights/<str:night>', views_images.images_nights, name='night'),
+    path(r'targets/', views_images.images_targets, name='targets'),
 
     # Detailed image view
     path(r'images/<int:id>/', views_images.image_details, name='image_details'),

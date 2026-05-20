@@ -1,0 +1,127 @@
+{% extends "template.html" %}
+
+{% load el_pagination_tags %}
+{% load filters %}
+
+{% block ptitle %}Targets : FRAM Archive {% endblock %}
+
+{% block title %}
+{% if object_query %}
+  Targets matching: {{ object_query }}
+{% else %}
+  Targets
+{% endif %}
+{% endblock %}
+
+{% block content %}
+
+  <div class="row justify-content-center">
+
+    {% if sites %}
+      <nav class="col-md-auto mr-2">
+        <ul class="pagination pagination-dark pagination-sm pagination-dark justify-content-center">
+          <li class="page-item disabled"><span class="page-link">Sites:</span></li>
+          {% for site in sites %}
+            {% with text="site="|add:site.site %}
+              <li class="page-item {% if request.GET.site == site.site %}active{% endif %}">
+                <a class="page-link" href="?{{ request.GET|GET_remove:"site"|GET_append:text|GET_remove:"page"|GET_urlencode }}" rel="nofollow">{{ site.site }}</a>
+              </li>
+            {% endwith %}
+          {% endfor %}
+          <li class="page-item  {% if not request.GET.site %}active{% endif %}">
+            <a class="page-link" href="?{{ request.GET|GET_remove:"site"|GET_remove:"page"|GET_urlencode }}" rel="nofollow">All</a>
+          </li>
+        </ul>
+      </nav>
+    {% endif %}
+
+    {% if ccds %}
+      <nav class="col-md-auto mr-2">
+        <ul class="pagination pagination-dark pagination-sm pagination-dark justify-content-center">
+          <li class="page-item disabled"><span class="page-link">CCDs:</span></li>
+          {% for ccd in ccds %}
+            {% with text="ccd="|add:ccd.ccd %}
+              <li class="page-item {% if request.GET.ccd == ccd.ccd %}active{% endif %}">
+                <a class="page-link" href="?{{ request.GET|GET_remove:"ccd"|GET_append:text|GET_remove:"page"|GET_urlencode }}" rel="nofollow">{{ ccd.ccd }}</a>
+              </li>
+            {% endwith %}
+          {% endfor %}
+          <li class="page-item  {% if not request.GET.ccd %}active{% endif %}">
+            <a class="page-link" href="?{{ request.GET|GET_remove:"ccd"|GET_remove:"page"|GET_urlencode }}" rel="nofollow">All</a>
+          </li>
+        </ul>
+      </nav>
+    {% endif %}
+
+  </div>
+
+  <form class="form" method="get">
+    <div class="row justify-content-center mb-2 g-2">
+      {% if request.GET.site %}
+        <input type="hidden" name="site" value="{{ request.GET.site }}">
+      {% endif %}
+      <div class="col-md">
+        <input
+        type="text"
+        class="form-control form-control-sm"
+        name="object"
+        value="{{ object_query }}"
+        placeholder="Target name or target id"
+        >
+      </div>
+      <div class="col-md-auto">
+        <button type="submit" class="btn btn-sm btn-primary">Filter</button>
+      </div>
+      {% if object_query %}
+        <div class="col-md-auto">
+          <a class="btn btn-sm btn-secondary" href="?{{ request.GET|GET_remove:"object"|GET_remove:"site"|GET_remove:"page"|GET_urlencode }}" rel="nofollow">Clear</a>
+        </div>
+      {% endif %}
+    </div>
+  </form>
+
+  {% paginate 200 targets %}
+  <table class="table table-striped table-sm">
+    <tr>
+      <th>Target</th>
+      {% if table_sites|length > 1 %}
+        <th class="text-center">Total</th>
+      {% endif %}
+      {% for site in table_sites %}
+        <th class="text-center text-uppercase">{{ site }}</th>
+      {% endfor %}
+    </tr>
+    {% for target in targets %}
+      <tr>
+        <td>
+          <a href="{% url 'nights' %}?object={{ target.target }}" title="Per-night stats for this target" rel="nofollow">
+            <i class="fa fa-list"></i> {{ target.target }}
+          </a>
+        </td>
+        {% if table_sites|length > 1 %}
+          <td class="text-center">
+            <a href="{% url 'images' %}?target={{ target.target }}" title="All images for this target" rel="nofollow">{{ target.total }}</a>
+          </td>
+        {% endif %}
+        {% for site in table_sites %}
+          {% with count=target.counts|get:site %}
+            <td class="text-center">
+              {% if count %}
+                <a href="{% url 'images' %}?target={{ target.target }}&site={{ site }}" title="Images from this site and target" rel="nofollow">{{ count }}</a>
+              {% else %}
+                -
+              {% endif %}
+            </td>
+          {% endwith %}
+        {% endfor %}
+      </tr>
+    {% empty %}
+      <tr>
+        <td colspan="99" class="text-center text-muted">No targets found.</td>
+      </tr>
+    {% endfor %}
+  </table>
+
+  {% show_pages %}
+
+{% endblock %}
