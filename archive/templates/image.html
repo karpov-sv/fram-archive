@@ -121,22 +121,35 @@
       </td>
     </tr>
 
+    {% if image.keywords.SCRIPT %}
+      <tr>
+        <td></td>
+        <td class="text-muted">{{ image.keywords.SCRIPT }}</td>
+      </tr>
+    {% endif %}
+
     {% if image.type == 'object' or image.type == 'flat' %}
       <tr>
-        <td>RA:</td>
-        <td>{{image.ra}}</td>
+        <td>RA / Dec:</td>
+        <td>
+          {{ image.ra|floatformat:4 }} {{ image.dec|floatformat:4 }}
+        </td>
       </tr>
-
       <tr>
-        <td>Dec:</td>
-        <td>{{image.dec}}</td>
+        <td>(hms / dms)</td>
+        <td>
+          {{ image.ra|to_sexadecimal_hours }} {{ image.dec|to_sexadecimal_plus }}
+        </td>
       </tr>
-
+      <tr>
+        <td>Radius:</td>
+        <td>{{ image.radius|floatformat:2 }} deg
+      </tr>
       {% if image.keywords.TEL_ALT %}
         <tr>
           <td>Alt / Az:</td>
           <td>
-            {{image.keywords.TEL_ALT}} {{image.keywords.TEL_AZ}}
+            {{ image.keywords.TEL_ALT|floatformat:4 }} {{ image.keywords.TEL_AZ|floatformat:4 }}
           </td>
         </tr>
       {% endif %}
