@@ -24,9 +24,9 @@
           <p class="card-text">
             <a href="{% url 'images' %}?{% encode_params site=site.site %}" rel="nofollow">{{ site.count }}</a> images
             <br>
-            First Night: <a href="{% url 'images' %}?{% encode_params site=site.site night=site.first %}" rel="nofollow">{{ site.first }}</a>
+            First Night: <a href="{% url 'night' night=site.first %}?{% encode_params site=site.site %}" rel="nofollow">{{ site.first }}</a>
             <br>
-            Latest Data: <a href="{% url 'images' %}?{% encode_params site=site.site night=site.last %}" rel="nofollow">{{ site.last }}</a>
+            Latest Data: <a href="{% url 'night' night=site.last %}?{% encode_params site=site.site %}" rel="nofollow">{{ site.last }}</a>
           </p>
 
         </div>

@@ -117,7 +117,7 @@
             {% with count=row.filter_counts|get:filter %}
               <td class="text-center">
                 {% if count %}
-                  <a href="{% url 'images' %}?{{ row.filter_queries|get:filter }}" title="Images from this group and filter" rel="nofollow">{{ count }}</a>
+                  <a href="{% url 'images' %}?{{ row.filter_queries|get:filter }}" title="Images from this target and filter" rel="nofollow">{{ count }}</a>
                 {% else %}
                   -
                 {% endif %}
@@ -142,12 +142,12 @@
       </tr>
       {% for night in nights %}
         <tr>
-          <td><a href="{% url 'night' night=night.night %}{% if request.GET.site %}?{{ request.GET|GET_remove:"page"|GET_urlencode }}{% endif %}" title="All images from this night" rel="nofollow"><i class="fa fa-list"></i> {{ night.night }}</a></td>
+          <td><a href="{% url 'night' night=night.night %}{% if request.GET.site %}?{{ request.GET|GET_remove:"page"|GET_urlencode }}{% endif %}" title="Overview of this night" rel="nofollow"><i class="fa fa-list"></i> {{ night.night }}</a></td>
           {% for site in table_sites %}
             {% with count=night.counts|get:site %}
               <td class="text-center">
                 {% if count %}
-                  <a href="{% url 'images' %}?{% encode_params night=night.night site=site ccd=request.GET.ccd %}" title="Images from this site and night" rel="nofollow">{{ count }}</a>
+                  <a href="{% url 'night' night=night.night %}?{% encode_params site=site ccd=request.GET.ccd %}" title="Overview of this night for this site" rel="nofollow">{{ count }}</a>
                 {% else %}
                   -
                 {% endif %}
