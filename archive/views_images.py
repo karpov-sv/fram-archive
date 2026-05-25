@@ -952,9 +952,12 @@ def image_analysis(request, id=0, mode='fwhm'):
                         ax = fig.add_subplot(323)
                         plots.plot_photometric_match(match, ax=ax, mode='color', show_masked=False)
 
+                        mag = obj['mag'] + match['zero_fn'](obj['x'], obj['y'], obj['mag'])
                         ax = fig.add_subplot(325)
-                        ax.hist(match['cmag'], bins=100)
-                        ax.set_xlabel('Catalogue mag')
+                        # ax.hist(match['cmag'], bins=100)
+                        ax.hist(mag, bins=20)
+                        ax.grid(alpha=0.2)
+                        ax.set_xlabel('Magnitude')
 
                         ax = fig.add_subplot(122)
                         plots.plot_photometric_match(match, ax=ax, mode='zero', bins=8, aspect='equal')
