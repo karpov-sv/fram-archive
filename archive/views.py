@@ -40,6 +40,10 @@ def index(request):
     return TemplateResponse(request, 'index.html', context=context)
 
 
+def links(request):
+    return TemplateResponse(request, 'links.html')
+
+
 @permission_required('auth.can_view_images', raise_exception=True)
 def sky_view(request):
     hips_base_url = 'http://fram.fzu.cz/archive/hips/saturated/'

@@ -29,6 +29,7 @@ from . import views_stats
 urlpatterns = [
     # Index
     path(r'', views.index, name="index"),
+    path(r'links/', views.links, name='links'),
 
     # Images
     path(r'images/', views_images.images_list, name='images'),
