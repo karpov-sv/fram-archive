@@ -81,9 +81,6 @@
            showline: true,
            zeroline: false
          },
-         modebar: {
-           add: ['togglehover'],
-         },
          hovermode: false,
          autosize: true,
          margin: {t: 30, r:30},
@@ -91,7 +88,21 @@
          showlegend: true,
        };
 
-       var config = {responsive: true}
+       var config = {
+         responsive: true,
+         modeBarButtonsToAdd: [{
+           name: 'togglehover',
+           title: 'Toggle show closest data on hover',
+           icon: Plotly.Icons.tooltip_basic,
+           attr: 'hovermode',
+           val: 'closest',
+           toggle: true,
+           click: function(gd) {
+             var newmode = gd._fullLayout.hovermode ? false : 'closest';
+             Plotly.relayout(gd, 'hovermode', newmode);
+           }
+         }],
+       }
 
        Plotly.newPlot(id, data, layout, config);
      }
