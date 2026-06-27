@@ -97,13 +97,16 @@ def make_uuid(x):
 
 
 @register.filter
-def to_sexadecimal(value, plus=False):
+def to_sexadecimal(value, plus=False, hours=False):
     avalue = np.abs(value)
     deg = int(np.floor(avalue))
     min = int(np.floor(60.0*(avalue - deg)))
     sec = 3600.0*(avalue - deg - 1.0*min/60)
 
-    string = '%02d %02d %04.1f' % (deg, min, sec)
+    if hours:
+        string = '%02d %02d %05.2f' % (deg, min, sec)
+    else:
+        string = '%02d %02d %04.1f' % (deg, min, sec)
 
     if value < 0:
         string = '-' + string
@@ -120,7 +123,7 @@ def to_sexadecimal_plus(value):
 
 @register.filter
 def to_sexadecimal_hours(value):
-    return to_sexadecimal(value*1.0/15)
+    return to_sexadecimal(value*1.0/15, hours=True)
 
 
 @register.filter
