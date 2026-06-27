@@ -989,10 +989,20 @@ def image_analysis(request, id=0, mode='fwhm'):
                             title += f" aper {aper:.1f}"
                         ax.set_title(title)
 
-    canvas = FigureCanvas(fig)
+    if request.GET.get('format', 'jpeg') == 'pdf':
+        from matplotlib.backends.backend_pdf import FigureCanvasPdf
 
-    response = HttpResponse(content_type='image/jpeg')
-    canvas.print_jpg(response)
+        canvas = FigureCanvasPdf(fig)
+        response = HttpResponse(content_type='application/pdf')
+        # HttpResponse is write-only (no seek), but the PDF backend needs a
+        # seekable file handle, so render into a buffer first.
+        buf = io.BytesIO()
+        canvas.print_pdf(buf)
+        response.write(buf.getvalue())
+    else:
+        canvas = FigureCanvas(fig)
+        response = HttpResponse(content_type='image/jpeg')
+        canvas.print_jpg(response)
 
     return response
 
