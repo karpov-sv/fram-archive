@@ -56,6 +56,7 @@ urlpatterns = [
     path(r'images/<int:id>/preview', views_images.image_preview, {'size':128}, name='image_preview'),
     # Image analysis
     path(r'images/<int:id>/bg', views_images.image_analysis, {'mode':'bg'}, name='image_bg'),
+    path(r'images/<int:id>/histogram', views_images.image_analysis, {'mode':'histogram'}, name='image_histogram'),
     path(r'images/<int:id>/fwhm', views_images.image_analysis, {'mode':'fwhm'}, name='image_fwhm'),
     path(r'images/<int:id>/wcs', views_images.image_analysis, {'mode':'wcs'}, name='image_wcs'),
     path(r'images/<int:id>/filters', views_images.image_analysis, {'mode':'filters'}, name='image_filters'),

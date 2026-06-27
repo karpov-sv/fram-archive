@@ -32,6 +32,10 @@
       <br>
       <a href="{% url 'image_bg' image.id %}" title="Click to inspect image background" onClick="return popupImage(event, '{%  url 'image_bg' image.id %}', 'Background', true)" rel="nofollow"><i class="fa fa-map"></i> Background</a>
       <span> - </span>
+      <a href="{% url 'image_histogram' image.id %}" title="Click to inspect image histogram" onClick="return popupImage(event, '{%  url 'image_histogram' image.id %}', 'Histogram', true)" rel="nofollow"><i class="fa fa-signal"></i> Histogram</a>
+      /
+      <a href="{% url 'image_histogram' image.id %}?raw=1" title="Click to inspect raw image histogram" onClick="return popupImage(event, '{%  url 'image_histogram' image.id %}?raw=1', 'Raw histogram', true)" rel="nofollow">Raw</a>
+      <span> - </span>
       <a href="{% url 'image_fwhm' image.id %}" title="Click to inspect image FWHM"  onClick="return popupImage(event, '{%  url 'image_fwhm' image.id %}', 'FWHM', true)" rel="nofollow"><i class="fa fa-bullseye"></i> FWHM</a>
       <span> - </span>
       <a href="{% url 'image_wcs' image.id %}" title="Click to inspect image WCS" onClick="return popupImage(event, '{%  url 'image_wcs' image.id %}', 'WCS', true)" rel="nofollow"><i class="fa fa-map-marker"></i> WCS</a>
@@ -124,7 +128,7 @@
     {% if image.keywords.SCRIPT %}
       <tr>
         <td></td>
-        <td class="text-muted">{{ image.keywords.SCRIPT }}</td>
+        <td class="fw-lighter fst-italic" title="Script used to produce the image">{{ image.keywords.SCRIPT }}</td>
       </tr>
     {% endif %}
 

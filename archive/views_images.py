@@ -94,6 +94,10 @@ def get_images(request):
     if exposure and exposure != 'all':
         images = images.filter(exposure=exposure)
 
+    width = request.GET.get('width')
+    if width and width != 'all':
+        images = images.filter(width=width)
+
     filename = request.GET.get('filename')
     if filename:
         if '%' in filename:
@@ -678,7 +682,7 @@ def image_analysis(request, id=0, mode='fwhm'):
 
     loaded = load_image_data(
         image,
-        mode="analysis",
+        mode="raw" if 'raw' in request.GET else "analysis",
     )
     data = loaded.data
     header = loaded.header
@@ -702,6 +706,25 @@ def image_analysis(request, id=0, mode='fwhm'):
         ax = fig.add_subplot(111)
         plots.imshow(bg, ax=ax, origin='lower')
         ax.set_title('%s - %s %s %s %s - bg mean %.2f median %.2f rms %.2f' % (os.path.split(filename)[-1], image.site, image.ccd, image.filter, str(image.exposure), np.nanmean(bg), np.nanmedian(bg), np.nanmedian(bg_rms)))
+
+    elif mode == 'histogram':
+        ax = fig.add_subplot(2, 1, 1)
+        ax.hist(data.flatten(), bins=1000)
+        ax.set_yscale('log')
+        ax.set_title(f"{'raw' if 'raw' in request.GET else 'processed'}  :  min {np.nanmin(data):.1f} median {np.nanmedian(data):.1f} max {np.nanmax(data):.1f}")
+        ax.grid(alpha=0.2)
+        ax.set_xmargin(0.01)
+        ax.set_xlabel(f"ADU")
+
+        ax = fig.add_subplot(2, 1, 2)
+        limits = np.percentile(data.flatten(), [2.5, 97.5])
+        limits = [int(np.floor(limits[0])), int(np.ceil(limits[1]))]
+        ax.hist(data.flatten(), bins=min(1000, limits[1]-limits[0]), range=limits)
+        ax.set_yscale('log')
+        ax.set_title(f"{'raw' if 'raw' in request.GET else 'processed'}  :  2.5% {limits[0]:.1f} median {np.nanmedian(data):.1f} 97.5% {limits[1]:.1f}")
+        ax.grid(alpha=0.2)
+        ax.set_xmargin(0)
+        ax.set_xlabel(f"ADU")
 
     elif mode == 'fwhm':
         # Detect objects; the returned table now carries both `fwhm` and
