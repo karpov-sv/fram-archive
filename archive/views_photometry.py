@@ -226,7 +226,8 @@ def lc(request, mode="jpg", size=800):
             lcs.append({'filter': fn, 'color': cols[idx][0],
                         'times': times_idx, 'mjds': list(mjds[idx]), 'xi': list(xi[idx]), 'eta': list(eta[idx]),
                         'mags': list(mags[idx]), 'magerrs': list(magerrs[idx]), 'flags': list(flags[idx]),
-                        'fwhms': list(fwhms[idx]), 'stds': list(stds[idx]), 'nstars': list(nstars[idx])})
+                        'fwhms': list(fwhms[idx]), 'stds': list(stds[idx]), 'nstars': list(nstars[idx]),
+                        'sites': list(sites[idx]), 'ccds': list(ccds[idx]), 'color_term': list(color_term[idx])})
 
         data = {'name': name, 'title': title, 'ra': ra, 'dec': dec, 'sr': sr, 'lcs': lcs}
 

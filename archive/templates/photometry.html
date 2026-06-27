@@ -38,7 +38,10 @@
          var lc = lcs[i];
          var custom = [];
          for(var ii=0; ii < lc.times.length; ii++) {
-           custom.push('Nstars = ' + lc.nstars[ii] + ' std = ' + lc.stds[ii].toFixed(3) + '<br>MJD = ' + lc.mjds[ii].toFixed(2));
+           custom.push('Nstars = ' + lc.nstars[ii] + ' std = ' + lc.stds[ii].toFixed(3)
+                       + '<br>color term = ' + lc.color_term[ii].toFixed(3)
+                       + '<br>MJD = ' + lc.mjds[ii].toFixed(2)
+                       + '<br>' + lc.sites[ii] + ' ' + lc.ccds[ii]);
          }
 
          data.push({
