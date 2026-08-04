@@ -1,8 +1,12 @@
 {% extends "template.html" %}
 {% load filters %}
+{% load l10n %}
 {% load crispy_forms_tags %}
 {% block head %}
   {% if lc %}
+    {% if perms.auth.can_view_images %}
+      {% include "popup_image.html" %}
+    {% endif %}
     <script src="https://cdn.plot.ly/plotly-3.3.0.min.js"></script>
     <script language="javascript">
      /* Check WebGL */
@@ -15,19 +19,349 @@
        }
      };
 
+     /* Not declared as a 'toggle' button on purpose: those are created highlighted
+        whatever the state is, and every click just flips the highlight without ever
+        looking at it, so it ends up showing the opposite of the truth. Giving the
+        attribute and the value instead makes Plotly derive the highlight by
+        comparing them to the actual hover mode. */
+     var hoverButton = {
+       name: 'togglehover',
+       title: 'Toggle show closest data on hover',
+       icon: Plotly.Icons.tooltip_basic,
+       attr: 'hovermode',
+       val: 'closest',
+       click: function(gd) {
+         var newmode = gd._fullLayout.hovermode ? false : 'closest';
+         Plotly.relayout(gd, 'hovermode', newmode);
+       }
+     };
+
+     /* Spinner standing in for something still being loaded, sized so that the
+        content appearing later does not shift the page around it */
+     function loadingPlaceholder(text, minHeight) {
+       return $('<div/>', {
+         class: 'd-flex flex-column justify-content-center align-items-center text-muted',
+         style: 'min-height: ' + (minHeight || 300) + 'px;'
+       })
+         .append($('<div/>', {class: 'spinner-border'}))
+         .append($('<div/>', {class: 'mt-2 placeholder-text'}).text(text || 'Loading...'));
+     }
+
+     /* Turns a placeholder into an error message in place */
+     function failPlaceholder(holder, text) {
+       holder.find('.spinner-border').remove();
+       holder.find('.placeholder-text').addClass('text-danger').text(text);
+       return holder;
+     }
+
+     {% if perms.auth.can_view_images %}
+     /* Whether clicking a light curve point opens the frame it was measured on.
+        Off by default so that clicks while panning or zooming do nothing. */
+     var frameOnClick = false;
+
+     /* Exactly the same machinery as the hover button above, and for the same
+        reason. As this state is not a layout attribute of its own, it is kept in
+        'meta', which Plotly maintains for arbitrary user data: that gives it a home
+        which both survives the layout being rebuilt on every zoom and can be read
+        back by the comparison, so the highlight always follows the truth. */
+     var frameButton = {
+       name: 'toggleframe',
+       title: 'Toggle showing the frame a point was measured on when clicking it',
+       icon: Plotly.Icons.movie,
+       attr: 'meta.frameclick',
+       val: 'on',
+       click: function(gd) {
+         frameOnClick = !frameOnClick;
+
+         var update = {'meta.frameclick': frameOnClick ? 'on' : 'off'};
+
+         /* Plotly reports a clicked point out of the hover data, so it emits no
+            click events at all while the hover is switched off */
+         if (frameOnClick && !gd._fullLayout.hovermode)
+           update.hovermode = 'closest';
+
+         Plotly.relayout(gd, update);
+       }
+     };
+     /* Cutout parameters describing how the pixels are displayed rather than
+        which ones - the only ones the cutout view understands beyond the
+        position. They are carried over when stepping to another point, so that
+        a faint star stays visible instead of the display resetting every time. */
+     var CUTOUT_VIEW_PARAMS = ['stretch', 'qmin', 'qmax'];
+
+     /* The same parameters as driven by the overlay controls, keyed by the label
+        of the placeholder option each of them starts with */
+     var CUTOUT_VIEW_CONTROLS = {Stretch: 'stretch', Scale: 'qmax'};
+
+     /* Half-size of the cutout shown in the popup, in degrees */
+     var CUTOUT_SR = 0.05;
+
+     /* Reversed from the routed URLs with a placeholder id rather than written
+        out by hand, so that they keep working when the app is served under a
+        prefix. The id is one no image will ever have. */
+     var IMAGE_URL = '{% url 'image_details' 987654321 %}';
+     var CUTOUT_URL = '{% url 'image_cutout_preview' 987654321 %}';
+
+     function forImage(url, id) {
+       return url.replace('987654321', id);
+     }
+
+     /* Radius of the photometric aperture, in units of the FWHM - the value the
+        forced photometry is extracted with, which is 1.5 FWHM everywhere except
+        the narrow-field cameras (see rel_aper in extract_photometry.py). The FWHM
+        is stored in the pixels of the frame, and the cutouts accept the radius in
+        the very same units, so the pixel scale of the CCD never enters the picture. */
+     function apertureFactor(ccd) {
+       return (ccd == 'NF3' || ccd == 'NF4') ? 1.0 : 1.5;
+     }
+
+     /* Show the frame a clicked point was measured on, with the neighbouring
+        points reachable from the same popup. */
+     function showFrame(curveNumber, pointIndex) {
+       var lc = window.lcs[curveNumber];
+
+       if (!lc || !lc.image_ids)
+         return;
+
+       /* `view` keeps the display settings across the frames of one popup, and
+          `mark` whether the measured star is circled - on to start with, as the
+          first question about a cutout is usually which source it is about. */
+       var state = {index: pointIndex, view: {}, mark: true};
+
+       var body = $('<div/>', {class: 'text-center'});
+
+       var dialog = bootbox.dialog({
+         title: 'Frame of the measurement',
+         message: body,
+         size: 'large',
+         onEscape: true,
+         buttons: {
+           prev: {
+             label: '< Prev', className: 'btn-secondary ms-1 me-1',
+             callback: function() { load(state.index - 1); return false; }
+           },
+           next: {
+             label: 'Next >', className: 'btn-secondary ms-1 me-auto',
+             callback: function() { load(state.index + 1); return false; }
+           },
+           image: {
+             label: 'Open image', className: 'btn-primary',
+             callback: function() {
+               var id = lc.image_ids[state.index];
+               if (id !== null && id !== undefined)
+                 window.open(forImage(IMAGE_URL, id) + '?ra={{ ra|unlocalize }}&dec={{ dec|unlocalize }}', '_blank');
+               return false;
+             }
+           },
+           close: {label: 'Close', className: 'btn-secondary'}
+         }
+       });
+
+       function updateButtons() {
+         dialog.find('[data-bb-handler="prev"]').prop('disabled', state.index <= 0);
+         dialog.find('[data-bb-handler="next"]').prop('disabled', state.index >= lc.times.length - 1);
+         dialog.find('[data-bb-handler="image"]').prop('disabled', lc.image_ids[state.index] === null);
+       }
+
+       /* Formats a number, keeping the missing values readable */
+       function num(value, digits) {
+         return (value === null || value === undefined || isNaN(value))
+           ? '-' : Number(value).toFixed(digits);
+       }
+
+       /* Flags as the bit pattern they are, keeping a missing value readable */
+       function flags(value) {
+         if (value === null || value === undefined || isNaN(value))
+           return '-';
+
+         value = Number(value);
+
+         return value.toString(2) + ' (0x' + value.toString(16) + ')';
+       }
+
+       function measurementTable(i) {
+         var rows = [
+           ['Time, UT', lc.times[i]],
+           ['MJD', num(lc.mjds[i], 5)],
+           ['Magnitude', num(lc.mags[i], 3) + ' ± ' + num(lc.magerrs[i], 3)],
+           ['Filter', lc.filter],
+           ['Site', lc.sites[i]],
+           ['CCD', lc.ccds[i]],
+           ['Flags', flags(lc.flags[i])],
+           ['FWHM, pixels', num(lc.fwhms[i], 2)],
+           ['Color term', num(lc.color_term[i], 3)],
+           ['Frame std', num(lc.stds[i], 3)],
+           ['Calibration stars', lc.nstars[i]],
+           ['Offset, arcsec', num(lc.xi[i], 1) + ' ' + num(lc.eta[i], 1)]
+         ];
+
+         var table = $('<table/>', {class: 'table table-sm table-striped small mb-0'});
+         rows.forEach(function(row) {
+           $('<tr/>')
+             .append($('<td/>', {class: 'text-muted'}).text(row[0]))
+             .append($('<td/>').text(row[1]))
+             .appendTo(table);
+         });
+
+         return table;
+       }
+
+       /* The overlay controls edit the image URL in place, so the settings the
+          user picked are read back from it before the image is thrown away */
+       function rememberView() {
+         var img = body.find('img.stdview-image');
+
+         if (!img.length || !img.attr('src'))
+           return;
+
+         var url = new URL(img.attr('src'), window.location);
+
+         CUTOUT_VIEW_PARAMS.forEach(function(name) {
+           var value = url.searchParams.get(name);
+
+           if (value === null)
+             delete state.view[name];
+           else
+             state.view[name] = value;
+         });
+
+         /* The aperture is a property of the frame rather than of the display,
+            so only whether it is drawn carries over - the radius itself is
+            recomputed from the seeing of whatever frame comes next */
+         state.mark = url.searchParams.has('mark_ra');
+       }
+
+       function showCutout(i) {
+         var id = lc.image_ids[i];
+         var radius = apertureFactor(lc.ccds[i])*lc.fwhms[i];
+
+         var params = new URLSearchParams({ra: {{ ra|unlocalize }}, dec: {{ dec|unlocalize }}, sr: CUTOUT_SR});
+
+         for (var name in state.view)
+           params.set(name, state.view[name]);
+
+         if (state.mark) {
+           params.set('mark_ra', {{ ra|unlocalize }});
+           params.set('mark_dec', {{ dec|unlocalize }});
+           params.set('mark_radius', radius);
+         }
+
+         var cutout = forImage(CUTOUT_URL, id) + '?' + params.toString();
+
+         var holder = loadingPlaceholder('Loading the cutout...', 300);
+
+         /* The night is a link to all the cutouts of this position from that
+            night alone, which is the usual next step after seeing one of them */
+         var nightUrl = '{% url 'images_cutouts' %}?' + new URLSearchParams({
+           ra: {{ ra|unlocalize }}, dec: {{ dec|unlocalize }}, sr: CUTOUT_SR, night: lc.nights[i]
+         }).toString();
+
+         var caption = $('<div/>', {class: 'small text-muted mt-2'})
+           .append(document.createTextNode('Image ' + id + ' - '))
+           .append($('<a/>', {
+             href: nightUrl,
+             target: '_blank',
+             title: 'All the cutouts of this position from this night'
+           }).text(lc.nights[i]))
+           .append(document.createTextNode(
+             ' - ' + lc.sites[i] + ' ' + lc.ccds[i] + ' - ' + lc.filter
+             + ' - point ' + (i + 1) + ' of ' + lc.times.length
+           ));
+
+         /* 'stdview-image' hands the image over to the overlay adding the stretch
+            and scale controls to it, which the cutouts understand as well */
+         var img = $('<img/>', {
+           class: 'img-fluid d-block mx-auto stdview-image',
+           alt: 'Cutout of image ' + id,
+           'data-stretch': 1,
+           /* Adds the control circling the measured star with the aperture the
+              photometry was extracted through */
+           'data-mark-ra': {{ ra|unlocalize }},
+           'data-mark-dec': {{ dec|unlocalize }},
+           'data-mark-radius': radius
+         })
+           .hide()
+           .on('load', function() { holder.remove(); img.show(); })
+           .on('error', function() { failPlaceholder(holder, 'Could not load the cutout.'); });
+
+         var left = $('<div/>', {class: 'col-md text-center'}).append(holder).append(img).append(caption);
+         var right = $('<div/>', {class: 'col'}).append(measurementTable(i));
+
+         body.empty().append($('<div/>', {class: 'row g-3'}).append(left).append(right));
+
+         /* The image is added after the page was loaded, so it has to be annotated
+            explicitly. Done before the loading starts, as annotating moves the image
+            within the document. */
+         overlay_stdview_images();
+
+         /* The controls are built anew along with the image, so they have to be
+            pointed back at the settings the URL above already carries */
+         var container = img.closest('.stdview-image-container');
+
+         container.find('select').each(function() {
+           var name = CUTOUT_VIEW_CONTROLS[$(this).find('option').first().text()];
+
+           if (name && state.view[name] !== undefined)
+             $(this).val(state.view[name]);
+         });
+
+         /* The mark is the only checkbox the popup asks the overlay for */
+         container.find('input[type="checkbox"]').prop('checked', state.mark);
+
+         /* Set the source only once the handlers are in place, so that an
+            already cached image does not slip through unnoticed */
+         img.attr('src', cutout);
+       }
+
+       function load(i) {
+         if (i < 0 || i >= lc.times.length)
+           return;
+
+         rememberView();
+
+         state.index = i;
+
+         dialog.find('.modal-title').text('Measurement at ' + lc.times[i]);
+         updateButtons();
+
+         if (lc.image_ids[i] === null || lc.image_ids[i] === undefined) {
+           body.empty().append(failPlaceholder(
+             loadingPlaceholder('', 300), 'This measurement has no frame in the archive.'));
+           return;
+         }
+
+         showCutout(i);
+       }
+
+       load(pointIndex);
+     }
+     {% endif %}
+
      $(document).ready(function() {
-       $('#lcDiv').html("Loading...");
+       /* Stands in for the plot until the data arrive, roughly as tall as the
+          plot itself so that it does not jump into place */
+       var lcPlaceholder = loadingPlaceholder('Loading the light curve data...', 400);
+       $('#messageDiv').empty().append(lcPlaceholder).show();
+       $('#dataDiv').hide();
 
        fetch('{{ lc_json|safe }}')
-                        .then(response => response.json())
-                        .then(data => {
-         $('#lcDiv').text("");
-         window.lcs = data['lcs'];
-         plot_lcs('lcDiv', data['title'], data['lcs'])
-       }).catch(error => {
-         $('#lcDiv').text("Error loading plot");
-         console.warn(error);
-       });
+         .then(function(response) {
+           if (!response.ok)
+             throw new Error('HTTP ' + response.status);
+           return response.json();
+         })
+         .then(function(data) {
+           /* Shown before plotting, as Plotly cannot size a plot it cannot measure */
+           $('#dataDiv').show();
+           $('#messageDiv').hide();
+
+           window.lcs = data['lcs'];
+           plot_lcs('lcDiv', data['title'], data['lcs']);
+         })
+         .catch(function(error) {
+           failPlaceholder(lcPlaceholder, 'Could not load the light curve data.');
+           console.warn(error);
+         });
      });
 
      function plot_lcs(id, title, lcs) {
@@ -86,25 +420,28 @@
          margin: {t: 30, r:30},
          font: {size: 10},
          showlegend: true,
+         {% if perms.auth.can_view_images %}
+         /* Initial state of the frame popup button, see frameButton above */
+         meta: {frameclick: 'off'},
+         {% endif %}
        };
 
+       /* The built-in hover buttons cannot be switched off once enabled, and the
+          comparison one is useless with a single dataset, so replace them with ours */
        var config = {
          responsive: true,
-         modeBarButtonsToAdd: [{
-           name: 'togglehover',
-           title: 'Toggle show closest data on hover',
-           icon: Plotly.Icons.tooltip_basic,
-           attr: 'hovermode',
-           val: 'closest',
-           toggle: true,
-           click: function(gd) {
-             var newmode = gd._fullLayout.hovermode ? false : 'closest';
-             Plotly.relayout(gd, 'hovermode', newmode);
-           }
-         }],
+         modeBarButtonsToRemove: ['hoverClosestCartesian', 'hoverCompareCartesian'],
+         modeBarButtonsToAdd: [hoverButton{% if perms.auth.can_view_images %}, frameButton{% endif %}],
        }
 
        Plotly.newPlot(id, data, layout, config);
+
+       {% if perms.auth.can_view_images %}
+       document.getElementById(id).on('plotly_click', function(ev) {
+         if (frameOnClick && ev.points && ev.points.length)
+           showFrame(ev.points[0].curveNumber, ev.points[0].pointIndex);
+       });
+       {% endif %}
      }
     </script>
   {% endif %}
@@ -132,6 +469,12 @@
   {% endif %}
 
   {% if lc %}
+    {# Holds the spinner, and the error message should the data fail to arrive #}
+    <div id="messageDiv" class="mt-4"></div>
+
+    {# Revealed once there is something to show, so that the downloads below do
+       not offer themselves before it is known whether the query returned data #}
+    <div id="dataDiv">
     <div id="lcDiv" class="mt-4" style="width:100%, height:600px">
       <!-- <img src="{{ lc }}" class="img-fluid"> -->
     </div>
@@ -142,6 +485,10 @@
         <a href="{{ lc_mjd|safe }}">Short and filtered</a>
       </div>
     {% endif %}
+    </div>{# dataDiv #}
+
+    {# Outside it on purpose: these describe the queried position rather than the
+       data, so they stay useful even when the light curve fails to load #}
 
     {% if ra or dec %}
       <div>

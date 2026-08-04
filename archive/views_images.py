@@ -13,6 +13,7 @@ from urllib.parse import urlencode
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.axes import Axes
+from matplotlib.patches import Circle
 from matplotlib import colormaps
 from astropy.visualization import simple_norm, ImageNormalize
 from astropy.visualization.stretch import HistEqStretch
@@ -27,7 +28,7 @@ from skimage.transform import rescale
 from io import BytesIO
 
 from astropy.io import fits
-from astropy.wcs import WCS
+from astropy.wcs import WCS, NoConvergence
 
 from stdpipe import cutouts, plots, astrometry, photometry, pipeline
 
@@ -212,6 +213,12 @@ def image_details(request, id=0):
     image = Images.objects.get(id=id)
     context['image'] = image
 
+    # The position to mark on the frame, if the page was reached with one, e.g.
+    # from the list of cutouts. Without it the control is not offered at all.
+    if request.GET.get('ra') and request.GET.get('dec'):
+        context['ra'] = request.GET.get('ra')
+        context['dec'] = request.GET.get('dec')
+
     # Calibrations
     if image.type not in ['masterdark', 'masterflat', 'bias', 'dcurrent', 'dark', 'zero']:
         context['dark'] = find_calibration_image(image, 'masterdark')
@@ -239,7 +246,13 @@ def image_details(request, id=0):
     return TemplateResponse(request, 'image.html', context=context)
 
 
-def image_response(data, qq=[2.5, 99.75], stretch='linear', cmap='Blues_r', quality=75):
+def image_response(data, qq=[2.5, 99.75], stretch='linear', cmap='Blues_r', quality=75, mark=None):
+    """Render a 2D array to a JPEG HttpResponse.
+
+    `mark`, if given, is an (x, y, radius) circle drawn over the result in the
+    pixel coordinates of `data` itself, so the caller is the one to worry about
+    any cropping or scaling it applied beforehand.
+    """
     limits = np.percentile(data[np.isfinite(data)], qq)
 
     if stretch == 'histeq':
@@ -274,6 +287,34 @@ def image_response(data, qq=[2.5, 99.75], stretch='linear', cmap='Blues_r', qual
     # OpenCV expects BGRA
     data = cv2.cvtColor(data, cv2.COLOR_RGBA2BGRA)
 
+    # Drawn before the flip below, which then carries the circle along with the
+    # pixels it marks
+    if mark is not None:
+        x, y, radius = mark
+
+        if np.all(np.isfinite([x, y, radius])) and radius > 0:
+            # Keyed on the width, which is exactly the size the caller asked for:
+            # the height depends on the shape of the data and wobbles by a pixel
+            # or two between the frames, which is enough to flip the rounding and
+            # to make the same circle look different from one cutout to the next.
+            # Never thinner than two pixels, as JPEG renders a hairline of pure
+            # color poorly - the chroma is subsampled and it washes out.
+            thickness = max(2, int(round(data.shape[1]/256)))
+
+            # OpenCV takes the geometry as fixed-point integers with `shift`
+            # fractional bits, which is how the circle keeps the sub-pixel
+            # position it is given instead of snapping to the pixel grid
+            shift = 4
+            f = 1 << shift
+
+            cv2.circle(
+                data, (int(round(x*f)), int(round(y*f))), int(round(radius*f)),
+                (0, 0, 255, 255),  # BGRA, i.e. red
+                thickness=thickness,
+                lineType=cv2.LINE_AA,
+                shift=shift,
+            )
+
     data = cv2.flip(data, 0)
 
     success, buf = cv2.imencode(
@@ -288,6 +329,29 @@ def image_response(data, qq=[2.5, 99.75], stretch='linear', cmap='Blues_r', qual
         buf.tobytes(),
         content_type="image/jpeg"
     )
+
+
+# Frame pixels the position mark shrinks to at the deepest zoom, where the
+# pixels of the frame are the ones of the screen - roughly a stellar profile
+MARK_RADIUS_ZOOMED = 6
+
+
+def get_mark(request, header):
+    """Circle marking a sky position on a frame, as (x, y, radius), or None.
+
+    The position is given as `mark_ra` / `mark_dec` rather than `ra` / `dec`, as
+    the cutouts already use the latter for the position they are centred on. The
+    radius is in the pixels of the frame the header describes.
+    """
+    try:
+        x, y = WCS(header).all_world2pix(
+            float(request.GET['mark_ra']), float(request.GET['mark_dec']), 0
+        )
+        return [float(x), float(y), float(request.GET.get('mark_radius', 0))]
+    except (KeyError, TypeError, ValueError, NoConvergence):
+        # No position asked for, or one the frame cannot place - either way the
+        # frame is still worth showing, just without the circle
+        return None
 
 
 @cache_page(3600)
@@ -310,6 +374,15 @@ def image_preview(request, id=0, size=0):
         show_grid = False
 
     zoom = int(request.GET.get('zoom', 1))
+
+    mark = get_mark(request, loaded.header)
+
+    # The radius is the one for the unzoomed view, where the whole frame is
+    # squeezed into the width of the page and a star is barely a pixel across.
+    # Zooming in, the circle shrinks towards the size of a star itself, so that
+    # it keeps pointing at the object instead of swallowing it.
+    if mark is not None and zoom > 1:
+        mark[2] = max(MARK_RADIUS_ZOOMED, mark[2]/np.sqrt(zoom))
 
     if show_grid is False:
         # Fast OpenCV-based image display
@@ -347,15 +420,26 @@ def image_preview(request, id=0, size=0):
 
             data = padded
 
+            if mark is not None:
+                mark = [mark[0] - x1, mark[1] - y1, mark[2]]
+
         if size:
+            scale = size/data.shape[1]
+
             data = cv2.resize(data, [int(size), int(size * data.shape[0]/data.shape[1])], interpolation=cv2.INTER_AREA)
+
+            # Resizing maps the centre of an input pixel to (x + 0.5)*scale - 0.5,
+            # so leaving the half pixel out would shift the circle off its star
+            if mark is not None:
+                mark = [(mark[0] + 0.5)*scale - 0.5, (mark[1] + 0.5)*scale - 0.5, mark[2]*scale]
 
         return image_response(
             data,
             stretch=request.GET.get('stretch', 'linear'),
             qq=[float(request.GET.get('qmin', 0.5)), float(request.GET.get('qmax', 99.5))],
             cmap=request.GET.get('cmap', 'Blues_r'),
-            quality=int(request.GET.get('quality', 75))
+            quality=int(request.GET.get('quality', 75)),
+            mark=mark,
         )
 
     # Default STDPipe based imshow
@@ -406,6 +490,12 @@ def image_preview(request, id=0, size=0):
 
     ax.set_xlim(*xlim)
     ax.set_ylim(*ylim)
+
+    # Here the axes are in the pixels of the frame, so the mark needs no adjusting.
+    # Drawn thicker than the default hairline for the same reason as on the fast
+    # path above - JPEG subsamples the chroma and washes a thin pure red line out.
+    if mark is not None and mark[2] > 0:
+        ax.add_patch(Circle(mark[:2], mark[2], edgecolor='red', facecolor='none', linewidth=2))
 
     fmt = 'jpeg'
     buf = io.BytesIO()
@@ -1039,17 +1129,36 @@ def image_cutout(request, id=0, size=0, mode='view'):
         response['Content-Length'] = len(s.getvalue())
         return response
 
-    if size:
-        if size > crop.shape[1]:
-            crop = rescale(crop, size/crop.shape[1], mode='reflect', anti_aliasing=False, order=0)
-        else:
-            crop = rescale(crop, size/crop.shape[1], mode='reflect', anti_aliasing=True)
+    # Optional circle marking a position, e.g. the star a light curve point was
+    # measured on. Its radius is in the pixels of the original frame - the same
+    # units as the FWHM stored with the photometry, so that the photometric
+    # aperture may be drawn without knowing the pixel scale of the CCD.
+    mark = get_mark(request, cropheader)
 
+    if size:
+        scale = size/crop.shape[1]
+
+        if size > crop.shape[1]:
+            crop = rescale(crop, scale, mode='reflect', anti_aliasing=False, order=0)
+        else:
+            crop = rescale(crop, scale, mode='reflect', anti_aliasing=True)
+
+        # The mark has to follow the pixels it points at. Rescaling maps the
+        # centre of an input pixel to (x + 0.5)*scale - 0.5 rather than to
+        # x*scale, so leaving the half pixel out would shift the circle by half
+        # of the upscaling - about a third of a frame pixel for the previews.
+        if mark is not None:
+            mark = [(mark[0] + 0.5)*scale - 0.5, (mark[1] + 0.5)*scale - 0.5, mark[2]*scale]
+
+    # Rendered the same way as the image previews, so that the display options of
+    # the interactive overlay work here as well
     response = image_response(
         crop,
-        qq=[2.5, float(request.GET.get('qq', 99.75))],
+        stretch=request.GET.get('stretch', 'linear'),
+        qq=[float(request.GET.get('qmin', 2.5)), float(request.GET.get('qmax', 99.75))],
         cmap=request.GET.get('cmap', 'Blues_r'),
-        quality=int(request.GET.get('quality', 75))
+        quality=int(request.GET.get('quality', 75)),
+        mark=mark,
     )
 
     return response

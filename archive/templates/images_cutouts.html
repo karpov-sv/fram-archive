@@ -49,7 +49,8 @@
     </tr>
     {% for image in images %}
       <tr>
-        <td><a href="{% url 'image_details' image.id %}" title="View image details" rel="nofollow"><i class="fa fa-file-image-o"></i> {{ image.id }}</a></td>
+        {# The position is carried over so that the frame page may mark it too #}
+        <td><a href="{% url 'image_details' image.id %}?{% encode_params ra=request.GET.ra dec=request.GET.dec %}" title="View image details" rel="nofollow"><i class="fa fa-file-image-o"></i> {{ image.id }}</a></td>
         <td>{{ image.time|date:"Y-m-d H:i:s" }}</td>
 
         {% with text="night="|addstr:image.night %}
@@ -74,9 +75,18 @@
 
         <td title="Distance from frame center">{{ image.dist|floatformat:2 }}</td>
 
-        <td><a href="{% url 'image_cutout' image.id %}?{% encode_params ra=request.GET.ra dec=request.GET.dec sr=request.GET.sr %}" title="View image" rel="nofollow">
-          <img src="{% url 'image_cutout_preview' image.id %}?{% encode_params ra=request.GET.ra dec=request.GET.dec sr=request.GET.sr %}" class="img-thumbnail">
-        </a></td>
+        <td>
+          {% comment %}
+            'stdview-image' adds the stretch and scale controls the cutouts understand,
+            plus the checkbox marking the position the cutouts are centred on. The mark
+            radius is in the pixels of the original frame, and is fixed here as the
+            search knows nothing of the seeing of the individual frames.
+          {% endcomment %}
+          <img src="{% url 'image_cutout_preview' image.id %}?{% encode_params ra=request.GET.ra dec=request.GET.dec sr=request.GET.sr %}" class="img-thumbnail stdview-image"
+               data-stretch=1 data-mark-ra="{{ request.GET.ra }}" data-mark-dec="{{ request.GET.dec }}" data-mark-radius=6>
+          {# The image itself is interactive now, so the full-size cutout gets a link of its own #}
+          <a href="{% url 'image_cutout' image.id %}?{% encode_params ra=request.GET.ra dec=request.GET.dec sr=request.GET.sr %}" title="View full-size cutout" rel="nofollow"><i class="fa fa-expand"></i> Full size</a>
+        </td>
 
         <td><a href="{% url 'image_cutout_download' image.id %}?{% encode_params ra=request.GET.ra dec=request.GET.dec sr=request.GET.sr %}" title="Download FITS" rel="nofollow"><i class="fa fa-download"></i> </a></td>
 

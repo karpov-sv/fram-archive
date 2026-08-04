@@ -15,8 +15,15 @@
 {% block content %}
 
   <div class="text-center">
+    {% comment %}
+      The mark control appears only when the page knows a position to point at.
+      The radius is in the pixels of the frame, and is larger than the one of the
+      cutouts as the whole frame is squeezed into the width of the page - zooming
+      in, the view shrinks it back towards the size of a star.
+    {% endcomment %}
     <!-- <a href="{% url 'image_full' image.id %}" title="Click for a full-size image" rel="nofollow"> -->
-      <img src="{% url 'image_view' image.id %}" class="img-thumbnail center-block {% if perms.auth.can_analyze_images or True %}stdview-image{% endif %}" data-stretch=1 data-zoom=1 data-grid=1 data-raw=1 />
+      <img src="{% url 'image_view' image.id %}" class="img-thumbnail center-block {% if perms.auth.can_analyze_images or True %}stdview-image{% endif %}" data-stretch=1 data-zoom=1 data-grid=1 data-raw=1
+           {% if ra and dec %}data-mark-ra="{{ ra }}" data-mark-dec="{{ dec }}" data-mark-radius=30{% endif %} />
       <!-- </a> -->
   </div>
 

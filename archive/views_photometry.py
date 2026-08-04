@@ -98,11 +98,14 @@ def lc(request, mode="jpg", size=800):
             'time', 'image__site', 'image__ccd', 'filter', 'ra', 'dec',
             'mag', 'magerr', 'flags', 'fwhm', 'std', 'nstars',
             'color_term', 'zp_std', 'final_frac',
+            # Identify the frame every measurement was made on, so that the plot
+            # may show the very pixels behind a point
+            'image__id', 'image__night',
         )
     )
 
     if data:
-        times, sites, ccds, filters, ras, decs, mags, magerrs, flags, fwhms, stds, nstars, color_term, zp_std, final_frac = zip(*data)
+        times, sites, ccds, filters, ras, decs, mags, magerrs, flags, fwhms, stds, nstars, color_term, zp_std, final_frac, image_ids, nights = zip(*data)
         times = np.array(times)
         sites = np.array(sites)
         ccds = np.array(ccds)
@@ -118,8 +121,12 @@ def lc(request, mode="jpg", size=800):
         color_term = np.array(color_term)
         zp_std = np.array(zp_std)
         final_frac = np.array(final_frac)
+        # Object arrays, as either column may be NULL for a measurement whose
+        # frame is gone from the archive
+        image_ids = np.array(image_ids, dtype=object)
+        nights = np.array(nights, dtype=object)
     else:
-        times = sites = ccds = filters = ras = decs = mags = magerrs = flags = fwhms = stds = nstars = color_term = zp_std = final_frac = np.array([])
+        times = sites = ccds = filters = ras = decs = mags = magerrs = flags = fwhms = stds = nstars = color_term = zp_std = final_frac = image_ids = nights = np.array([])
 
     mjds = Time(times).mjd if len(times) else []
 
@@ -227,7 +234,9 @@ def lc(request, mode="jpg", size=800):
                         'times': times_idx, 'mjds': list(mjds[idx]), 'xi': list(xi[idx]), 'eta': list(eta[idx]),
                         'mags': list(mags[idx]), 'magerrs': list(magerrs[idx]), 'flags': list(flags[idx]),
                         'fwhms': list(fwhms[idx]), 'stds': list(stds[idx]), 'nstars': list(nstars[idx]),
-                        'sites': list(sites[idx]), 'ccds': list(ccds[idx]), 'color_term': list(color_term[idx])})
+                        'sites': list(sites[idx]), 'ccds': list(ccds[idx]), 'color_term': list(color_term[idx]),
+                        'image_ids': [None if _ is None else int(_) for _ in image_ids[idx]],
+                        'nights': list(nights[idx])})
 
         data = {'name': name, 'title': title, 'ra': ra, 'dec': dec, 'sr': sr, 'lcs': lcs}
 

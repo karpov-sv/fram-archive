@@ -6,6 +6,12 @@ $(document).ready(function() {
 overlay_stdview_images = function() {
     $('.stdview-image').each(function(index) {
         var image = $(this);
+
+        /* May be called again for the images added to the page dynamically, so
+           skip the ones already wrapped to not annotate them twice */
+        if (image.parent().hasClass('stdview-image-container'))
+            return;
+
         var container = image.wrap("<div/>").parent().addClass('stdview-image-container');
 
         var overlay = $('<div/>').addClass('stdview-image-overlay');
@@ -87,23 +93,21 @@ overlay_stdview_images = function() {
 
         }
 
-        /* data-mark-ra and data-mark-dec parameters */
+        /* data-mark-ra and data-mark-dec parameters. The position is passed as
+           mark_ra / mark_dec rather than ra / dec, as the cutouts already use the
+           latter for the position they are centred on. */
         if ('markRa' in image.data() && 'markDec' in image.data()) {
   	    var checkbox = $('<input type="checkbox"/>');
             var label = $('<i class="fa fa-bullseye" style="padding-left: 0.3em; padding-right: 0.1em;">');
 
   	    checkbox.on('click', function() {
     	        if (this.checked) {
-      	            update_image_get_params(image, {ra: image.data('markRa'), dec: image.data('markDec')});
+      	            update_image_get_params(image, {mark_ra: image.data('markRa'), mark_dec: image.data('markDec')});
 
                     if ('markRadius' in image.data())
-                        update_image_get_params(image, {radius: image.data('markRadius')});
-                    if ('markRadius2' in image.data())
-                        update_image_get_params(image, {radius2: image.data('markRadius2')});
-                    if ('markRadius3' in image.data())
-                        update_image_get_params(image, {radius3: image.data('markRadius3')});
+                        update_image_get_params(image, {mark_radius: image.data('markRadius')});
                 } else
-      	            update_image_get_params(image, {ra: null, dec: null, r0: null});
+      	            update_image_get_params(image, {mark_ra: null, mark_dec: null, mark_radius: null});
             });
 
             checkbox.attr('title', 'Click to mark the position');
