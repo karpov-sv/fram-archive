@@ -231,6 +231,11 @@ def lc(request, mode="jpg", size=800):
             times_idx = [_.isoformat() for _ in times[idx]]
 
             lcs.append({'filter': fn, 'color': cols[idx][0],
+                        # Where the star was actually detected on every frame, as
+                        # opposed to where it was asked for. The photometry is
+                        # extracted from a free detection rather than forced at a
+                        # catalogue position, so the two differ by a pixel or two.
+                        'ras': list(ras[idx]), 'decs': list(decs[idx]),
                         'times': times_idx, 'mjds': list(mjds[idx]), 'xi': list(xi[idx]), 'eta': list(eta[idx]),
                         'mags': list(mags[idx]), 'magerrs': list(magerrs[idx]), 'flags': list(flags[idx]),
                         'fwhms': list(fwhms[idx]), 'stds': list(stds[idx]), 'nstars': list(nstars[idx]),

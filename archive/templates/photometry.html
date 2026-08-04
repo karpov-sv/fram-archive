@@ -148,8 +148,11 @@
              label: 'Open image', className: 'btn-primary',
              callback: function() {
                var id = lc.image_ids[state.index];
+               /* Marked where the measurement was made, as in the cutout above */
                if (id !== null && id !== undefined)
-                 window.open(forImage(IMAGE_URL, id) + '?ra={{ ra|unlocalize }}&dec={{ dec|unlocalize }}', '_blank');
+                 window.open(forImage(IMAGE_URL, id) + '?' + new URLSearchParams({
+                   ra: lc.ras[state.index], dec: lc.decs[state.index]
+                 }).toString(), '_blank');
                return false;
              }
            },
@@ -235,14 +238,23 @@
          var id = lc.image_ids[i];
          var radius = apertureFactor(lc.ccds[i])*lc.fwhms[i];
 
+         /* Where this particular measurement was made. The photometry comes from
+            a free detection on every frame rather than from an aperture forced at
+            the queried position, so the star sits a pixel or two away from it and
+            differently on every frame - the aperture has to follow it. */
+         var mra = lc.ras[i], mdec = lc.decs[i];
+
+         /* The cutout itself stays centred on the queried position, so that the
+            view does not jump around while stepping through the points; the
+            offset of the measurement then simply shows as an off-centre circle. */
          var params = new URLSearchParams({ra: {{ ra|unlocalize }}, dec: {{ dec|unlocalize }}, sr: CUTOUT_SR});
 
          for (var name in state.view)
            params.set(name, state.view[name]);
 
          if (state.mark) {
-           params.set('mark_ra', {{ ra|unlocalize }});
-           params.set('mark_dec', {{ dec|unlocalize }});
+           params.set('mark_ra', mra);
+           params.set('mark_dec', mdec);
            params.set('mark_radius', radius);
          }
 
@@ -276,8 +288,8 @@
            'data-stretch': 1,
            /* Adds the control circling the measured star with the aperture the
               photometry was extracted through */
-           'data-mark-ra': {{ ra|unlocalize }},
-           'data-mark-dec': {{ dec|unlocalize }},
+           'data-mark-ra': mra,
+           'data-mark-dec': mdec,
            'data-mark-radius': radius
          })
            .hide()
