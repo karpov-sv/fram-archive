@@ -78,6 +78,26 @@ class ImagesSearchForm(forms.Form):
         })
     )
 
+    average = forms.BooleanField(
+        required=False, label="Average close points",
+        widget=forms.CheckboxInput(attrs={
+            'title': 'Combine the measurements of a single visit, per site, camera and filter',
+        })
+    )
+
+    average_window = forms.FloatField(
+        min_value=0, required=False, label="Within, s", initial=600,
+        widget=forms.NumberInput(attrs={
+            'placeholder': '600',
+            'title': 'Largest gap between the measurements to be averaged together, in seconds',
+        })
+    )
+
+    average_mode = forms.ChoiceField(
+        choices=[('mean', 'Weighted mean'), ('median', 'Median'), ('clipped', 'Clipped mean')],
+        required=False, label="Combined as"
+    )
+
     def __init__(self, *args, **kwargs):
         mode = kwargs.pop('mode')
 
@@ -115,6 +135,15 @@ class ImagesSearchForm(forms.Form):
                 Column('maxdist', css_class='col-md') if mode == 'cutouts' else None,
                 Column('sigma', css_class='col-md-auto') if mode == 'photometry' else None,
                 Column('nofiltering', css_class="col-md mb-2") if mode == 'photometry' else None,
+                css_class='align-items-end',
+            ),
+            Row(
+                Column('average', css_class='col-md-auto mb-2'),
+                Column('average_mode', css_class='col-md-auto'),
+                Column('average_window', css_class='col-md-auto'),
+                css_class='align-items-end',
+            ) if mode == 'photometry' else None,
+            Row(
                 Column(
                     Submit('search', 'Search', css_class='btn-primary mb-1'),
                     css_class="col-md-auto"

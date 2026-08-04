@@ -151,6 +151,199 @@ def get_lc(params):
     return lc
 
 
+# Default largest gap between two measurements still counted as one visit, in
+# seconds. Some of the target scripts take several images in a row before moving
+# on, so the measurements arrive in clumps a minute or two apart separated by
+# much larger gaps - on HD 7252 three quarters of the intervals within a band are
+# under ten minutes, while a survey field such as the one M31 falls in shows no
+# clumping at all. Hence an option rather than a default.
+AVERAGE_WINDOW = 600.0
+
+# A group is additionally not allowed to span more than this many times the
+# window, so that a long continuous sequence - a follow-up, say - is binned
+# rather than collapsed into a single point.
+AVERAGE_MAX_SPAN_FACTOR = 3
+
+# How the measurements of a group are combined
+AVERAGE_MODES = ['mean', 'median', 'clipped']
+AVERAGE_MODE = 'mean'
+
+# How far a measurement may deviate from the median of its group, in units of the
+# expected uncertainty of that deviation, before the `clipped` mode drops it.
+# Kept loose, as the point is to remove the grossly spoiled measurements rather
+# than to trim the distribution.
+AVERAGE_CLIP_SIGMA = 5.0
+
+# Systematic scatter of the photometry, added in quadrature to the errors when
+# deciding what deviates. The reported errors are photometric only, while the
+# light curves have an irreducible floor of about this size, so without it a
+# bright star with tiny errors would have its perfectly normal points rejected.
+AVERAGE_CLIP_FLOOR = 0.02
+
+
+def group_close_measurements(times, keys, window=AVERAGE_WINDOW):
+    """Assign a group id to measurements that are close in time.
+
+    Measurements sharing the same `key` - the site, the camera and the filter -
+    and separated by no more than `window` seconds from the previous one belong to
+    the same group. Grouping is done per key, so two sites observing the same star
+    on the same night, or two cameras at one site, do not interfere with each
+    other, and no average ever mixes zero points that need not agree.
+    """
+    groups = np.full(len(times), -1, dtype=int)
+    gid = 0
+
+    for key in set(keys):
+        sel = np.where(keys == key)[0]
+        sel = sel[np.argsort(times[sel])]
+
+        start = None
+        prev = None
+
+        for i in sel:
+            if prev is not None:
+                gap = (times[i] - prev).total_seconds()
+                span = (times[i] - start).total_seconds()
+                if gap > window or span > AVERAGE_MAX_SPAN_FACTOR*window:
+                    gid += 1
+                    start = times[i]
+            else:
+                start = times[i]
+
+            groups[i] = gid
+            prev = times[i]
+
+        gid += 1
+
+    return groups
+
+
+def clip_group(mags, magerrs, sigma=AVERAGE_CLIP_SIGMA, floor=AVERAGE_CLIP_FLOOR):
+    """Members of a group not deviating from its median.
+
+    The deviation of every measurement from the median of the group is compared
+    with what its own error, and the error of the median itself, allow. This is
+    what an inverse-variance weighted mean cannot do on its own: a spuriously
+    bright measurement is by construction assigned a small error, so it comes with
+    an enormous weight and the average follows it instead of the good points.
+    Fewer than three measurements are left alone, as with two of them there is no
+    way to tell which one is the outlier.
+    """
+    idx = np.ones(len(mags), dtype=bool)
+
+    if len(mags) < 3:
+        return idx
+
+    median = np.median(mags)
+
+    # Uncertainty of the median, taken as that of a typical member. Being a rough
+    # scale rather than a rigorous error, it needs no sqrt(N) refinement.
+    err0 = np.median(magerrs)
+
+    with np.errstate(invalid='ignore'):
+        scale = np.sqrt(magerrs**2 + err0**2 + 2*floor**2)
+        passed = np.abs(mags - median) < sigma*scale
+
+    # A group where the test is unusable (missing errors, or everything rejected)
+    # is kept whole rather than silently emptied
+    if not np.all(np.isfinite(scale)) or not np.any(passed):
+        return idx
+
+    return passed
+
+
+# Combined the same way as the magnitudes, but without any weighting
+AVERAGE_PLAIN_COLUMNS = ['ras', 'decs', 'fwhms', 'stds', 'nstars', 'color_term']
+
+# Taken from the earliest measurement of a group: the light curve point sits at
+# the mean time, which for an incomplete group belongs to no frame at all, so
+# these have to name an actual one for the cutout popup to open
+AVERAGE_FIRST_COLUMNS = ['image_ids', 'nights']
+
+
+def average_lc(data, window=AVERAGE_WINDOW, mode=AVERAGE_MODE):
+    """Average measurements clustered in time, improving the accuracy.
+
+    In the `mean` mode the magnitudes within a group are combined with an
+    inverse-variance weighted mean, so the uncertainty of a group of N similar
+    points shrinks roughly as sqrt(N). The `median` mode takes their median
+    instead, which resists a single spoiled measurement at the cost of a larger
+    uncertainty. The `clipped` mode first drops the members deviating from the
+    median of their group (see `clip_group`) and then takes the weighted mean of
+    the rest, keeping the precision of the mean where nothing is wrong. Flags are
+    OR-ed together, and `npoints` reports how many measurements went into every
+    result - which in the `clipped` mode is the number actually used, not the
+    number the group started with.
+    """
+    combine = np.median if mode == 'median' else np.mean
+
+    keys = np.array(['%s_%s_%s' % (s, c, f)
+                     for s, c, f in zip(data['sites'], data['ccds'], data['filters'])])
+    groups = group_close_measurements(data['times'], keys, window=window)
+
+    result = {_: [] for _ in data}
+    result['npoints'] = []
+
+    for gid in sorted(set(groups)):
+        idx = groups == gid
+
+        if mode == 'clipped':
+            # The rejected members drop out of every column, not just of the
+            # magnitude, so that the result describes the same measurements
+            sel = np.where(idx)[0]
+            idx = np.zeros_like(idx)
+            idx[sel[clip_group(data['mags'][sel], data['magerrs'][sel])]] = True
+
+        n = int(np.sum(idx))
+
+        mag = np.asarray(data['mags'][idx], dtype=float)
+        magerr = np.asarray(data['magerrs'][idx], dtype=float)
+
+        if mode == 'median':
+            result['mags'].append(np.median(mag))
+
+            # The median is a noisier estimator than the mean: asymptotically its
+            # variance is larger by pi/2. For one or two points it is just their
+            # unweighted mean, so the plain error of the mean applies there.
+            sigma = np.sqrt(np.mean(magerr**2)/n)
+            result['magerrs'].append(sigma if n < 3 else np.sqrt(0.5*np.pi)*sigma)
+        else:
+            # Inverse-variance weights, falling back to equal ones if the errors
+            # are missing or degenerate
+            with np.errstate(divide='ignore', invalid='ignore'):
+                weights = 1.0/magerr**2
+            if not np.all(np.isfinite(weights)) or np.sum(weights) <= 0:
+                weights = np.ones_like(mag)
+
+            result['mags'].append(np.sum(weights*mag)/np.sum(weights))
+            result['magerrs'].append(np.sqrt(1.0/np.sum(weights)))
+
+        # Central time of the group
+        mjd = np.asarray(data['mjds'][idx], dtype=float)
+        result['mjds'].append(combine(mjd))
+        result['times'].append(Time(combine(mjd), format='mjd').datetime)
+
+        # Any problem with a constituent frame marks the average. Kept as float
+        # to match the type of the non-averaged points.
+        gflags = np.nan_to_num(np.asarray(data['flags'][idx], dtype=float)).astype(int)
+        result['flags'].append(float(np.bitwise_or.reduce(gflags)))
+
+        # All three are the key, so they are constant within a group
+        for _ in ['sites', 'ccds', 'filters']:
+            result[_].append(data[_][idx][0])
+
+        first = int(np.argmin(mjd))
+        for _ in AVERAGE_FIRST_COLUMNS:
+            result[_].append(data[_][idx][first])
+
+        for _ in AVERAGE_PLAIN_COLUMNS:
+            result[_].append(combine(np.asarray(data[_][idx], dtype=float)))
+
+        result['npoints'].append(n)
+
+    return {_: np.array(result[_]) for _ in result}
+
+
 # Fewest measurements a band needs before it is shown, and searched, at all. A
 # single point is nothing to draw a light curve from, and it carries no
 # information for the period search either: centring a band on its own median
@@ -178,6 +371,7 @@ def displayed_mask(filters, idx0, minimum=MIN_POINTS_PER_FILTER):
 LC_PARAMS = [
     'ra', 'dec', 'sr', 'night', 'night1', 'night2', 'site', 'ccd', 'filter',
     'magerr', 'nstars', 'nofiltering', 'sigma',
+    'average', 'average_window', 'average_mode',
 ]
 
 LC_CACHE_TIMEOUT = 600
@@ -187,18 +381,22 @@ LC_CACHE_TIMEOUT = 600
 LC_CACHE_MAX_POINTS = 20000
 
 
-def lc_query_params(request):
-    """Stable, hashable form of the parameters the data depend on."""
-    return tuple((_, request.GET.get(_)) for _ in LC_PARAMS)
+def lc_query_params(request, **overrides):
+    """Stable, hashable form of the parameters the data depend on.
+
+    `overrides` replaces individual ones, which is how a view asks for a variant
+    of the light curve the request did not itself describe.
+    """
+    return tuple((_, overrides.get(_, request.GET.get(_))) for _ in LC_PARAMS)
 
 
-def cached_lc(request):
+def cached_lc(request, **overrides):
     """`build_lc` for a request, keeping the result for the other views.
 
     The same light curve is asked for by the plot and then by the period search,
     so hold on to it instead of querying the database anew every time.
     """
-    params = lc_query_params(request)
+    params = lc_query_params(request, **overrides)
     key = 'lc:' + hashlib.md5(pickle.dumps(params)).hexdigest()
 
     data = cache.get(key)
@@ -312,8 +510,60 @@ def build_lc(params):
 
         idx0 = mask
 
+    # Optionally combine the measurements of a single visit, which is what the
+    # target scripts taking several images in a row produce. Applied last, to the
+    # points surviving everything above, so that a spoiled measurement is rejected
+    # rather than averaged into a good group.
+    averaging = bool(params.get('average'))
+
+    try:
+        average_window = float(params.get('average_window') or AVERAGE_WINDOW)
+    except ValueError:
+        average_window = AVERAGE_WINDOW
+
+    if not np.isfinite(average_window) or average_window <= 0:
+        average_window = AVERAGE_WINDOW
+
+    average_mode = params.get('average_mode') or AVERAGE_MODE
+    if average_mode not in AVERAGE_MODES:
+        average_mode = AVERAGE_MODE
+
+    npoints = None
+
+    if averaging and np.any(idx0):
+        averaged = average_lc(
+            {
+                'times': times[idx0], 'mjds': np.asarray(mjds)[idx0],
+                'sites': sites[idx0], 'ccds': ccds[idx0], 'filters': filters[idx0],
+                'ras': ras[idx0], 'decs': decs[idx0],
+                'mags': mags[idx0], 'magerrs': magerrs[idx0],
+                'flags': flags[idx0], 'fwhms': fwhms[idx0],
+                'stds': stds[idx0], 'nstars': nstars[idx0],
+                'color_term': color_term[idx0],
+                'image_ids': image_ids[idx0], 'nights': nights[idx0],
+            },
+            window=average_window,
+            mode=average_mode,
+        )
+
+        times, mjds = averaged['times'], averaged['mjds']
+        sites, ccds, filters = averaged['sites'], averaged['ccds'], averaged['filters']
+        ras, decs = averaged['ras'], averaged['decs']
+        mags, magerrs = averaged['mags'], averaged['magerrs']
+        flags, fwhms = averaged['flags'], averaged['fwhms']
+        stds, nstars, color_term = averaged['stds'], averaged['nstars'], averaged['color_term']
+        image_ids, nights = averaged['image_ids'], averaged['nights']
+        npoints = averaged['npoints']
+
+        # Everything left has already passed the cuts, and the colours have to
+        # follow the regrouped points
+        idx0 = np.ones(len(times), dtype=bool)
+        cols = np.array([{'B':'blue', 'V':'green', 'R':'red', 'I':'orange', 'z':'magenta'}.get(_, 'black') for _ in filters])
+
     return {
         'sigma': sigma,
+        'npoints': npoints, 'averaging': averaging,
+        'average_window': average_window, 'average_mode': average_mode,
         'times': times, 'mjds': np.asarray(mjds), 'sites': sites, 'ccds': ccds,
         'filters': filters, 'cols': cols, 'ras': ras, 'decs': decs,
         'mags': mags, 'magerrs': magerrs, 'flags': flags, 'fwhms': fwhms,
@@ -477,7 +727,10 @@ def period(request):
 
 
 def lc(request, mode="jpg", size=800):
-    data = cached_lc(request)
+    # The full dump is of the measurements themselves, so it is taken without the
+    # averaging: an averaged point is not a measurement, and the columns
+    # describing the frame it was made on would describe several of them at once.
+    data = cached_lc(request, average=None) if mode == 'text' else cached_lc(request)
 
     times, mjds = data['times'], data['mjds']
     sites, ccds, filters, cols = data['sites'], data['ccds'], data['filters'], data['cols']
@@ -486,7 +739,7 @@ def lc(request, mode="jpg", size=800):
     flags, fwhms = data['flags'], data['fwhms']
     stds, nstars, color_term = data['stds'], data['nstars'], data['color_term']
     image_ids, nights = data['image_ids'], data['nights']
-    idx0 = data['idx0']
+    idx0, npoints = data['idx0'], data['npoints']
 
     ra = float(request.GET.get('ra'))
     dec = float(request.GET.get('dec'))
@@ -515,6 +768,11 @@ def lc(request, mode="jpg", size=800):
     # Worth saying, as it is off by default and does reject real variability
     if data['sigma'] > 0:
         title += ' - clipped at %g sigma' % data['sigma']
+
+    if data['averaging']:
+        title += ' - %s over %.0f s' % (
+            {'median': 'median', 'clipped': 'clipped mean'}.get(data['average_mode'], 'averaged'),
+            data['average_window'])
 
     xi,eta = radectoxieta(ras, decs, ra, dec)
     xi *= 3600
@@ -569,7 +827,8 @@ def lc(request, mode="jpg", size=800):
                         'fwhms': list(fwhms[idx]), 'stds': list(stds[idx]), 'nstars': list(nstars[idx]),
                         'sites': list(sites[idx]), 'ccds': list(ccds[idx]), 'color_term': list(color_term[idx]),
                         'image_ids': [None if _ is None else int(_) for _ in image_ids[idx]],
-                        'nights': list(nights[idx])})
+                        'nights': list(nights[idx]),
+                        'npoints': [int(_) for _ in npoints[idx]] if npoints is not None else None})
 
         data = {'name': name, 'title': title, 'ra': ra, 'dec': dec, 'sr': sr, 'lcs': lcs}
 

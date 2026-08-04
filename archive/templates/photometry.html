@@ -224,6 +224,9 @@
            ['Offset, arcsec', num(lc.xi[i], 1) + ' ' + num(lc.eta[i], 1)]
          ];
 
+         if (lc.npoints && lc.npoints[i] > 1)
+           rows.push(['Averaged over', lc.npoints[i] + ' frames']);
+
          var table = $('<table/>', {class: 'table table-sm table-striped small mb-0'});
          rows.forEach(function(row) {
            $('<tr/>')
@@ -303,6 +306,7 @@
            }).text(lc.nights[i]))
            .append(document.createTextNode(
              ' - ' + lc.sites[i] + ' ' + lc.ccds[i] + ' - ' + lc.filter
+             + (lc.npoints && lc.npoints[i] > 1 ? ' - first of ' + lc.npoints[i] + ' averaged frames' : '')
              + ' - point ' + (i + 1) + ' of ' + lc.times.length
            ));
 
@@ -632,7 +636,8 @@
        return 'Nstars = ' + lc.nstars[ii] + ' std = ' + lc.stds[ii].toFixed(3)
               + '<br>color term = ' + lc.color_term[ii].toFixed(3)
               + '<br>MJD = ' + lc.mjds[ii].toFixed(2)
-              + '<br>' + lc.sites[ii] + ' ' + lc.ccds[ii];
+              + '<br>' + lc.sites[ii] + ' ' + lc.ccds[ii]
+              + (lc.npoints ? '<br>averaged over ' + lc.npoints[ii] + ' points' : '');
      }
 
      /* Folding needs no server at all - the browser already has the time of
@@ -813,6 +818,18 @@
       on purpose: unlike the quality cuts, which reject what is known to be bad, this one rejects whatever
       deviates, and so removes the deep minima of a genuine variable together with the outliers. Useful for
       cleaning up a star expected to be constant, and best avoided otherwise.<br>
+      <i>Average close points</i> combines the measurements of a single visit into one, which suits the target
+      scripts that take several images in a row before moving on. Grouping is per site, camera and filter, so
+      no average mixes zero points that need not agree, and <i>within</i> sets the largest gap still counted as
+      the same visit; a group is never allowed to span more than three such intervals, so a long continuous
+      sequence is binned rather than collapsed into a single point. The <i>weighted mean</i> is the most
+      precise of the three combinations, shrinking the uncertainty roughly as the square root of the number of
+      measurements, but also the most vulnerable to a spoiled one: a cosmic ray makes a measurement brighter,
+      a brighter measurement is assigned a smaller error, a smaller error means a larger weight, and the
+      average follows it. The <i>median</i> is immune to that at the price of a somewhat larger uncertainty,
+      by a factor of about 1.25. The <i>clipped mean</i> is the compromise, dropping the measurements deviating
+      from the median of their group before taking the weighted mean of the rest. Averaging also smears out
+      variability faster than the window, so switch it off when looking for short periods.<br>
       The result view groups points by filter in an interactive light-curve plot with error bars and hover
       details. It also provides full and filtered text downloads, plus quick links to SIMBAD, AAVSO VSX, NSVS,
       ASAS-SN, and Aladin for the query position.<br>
