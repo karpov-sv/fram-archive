@@ -74,6 +74,7 @@ urlpatterns = [
     path(r'photometry/json', views_photometry.lc, {'mode': 'json'}, name='photometry_json'),
     path(r'photometry/text', views_photometry.lc, {'mode': 'text'}, name='photometry_text'),
     path(r'photometry/mjd', views_photometry.lc, {'mode': 'mjd'}, name='photometry_mjd'),
+    path(r'photometry/period', views_photometry.period, name='photometry_period'),
 
     # Search
     path(r'search/', views.search, name='search'),

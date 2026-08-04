@@ -241,6 +241,7 @@ def search(request, mode='images'):
                     context['lc_json'] = reverse('photometry_json') + '?' + urlencode(params)
                     context['lc_text'] = reverse('photometry_text') + '?' + urlencode(params)
                     context['lc_mjd'] = reverse('photometry_mjd') + '?' + urlencode(params)
+                    context['lc_period'] = reverse('photometry_period') + '?' + urlencode(params)
 
                     # Only the resolved queries have a position to preview
                     if 'ra' in params:
