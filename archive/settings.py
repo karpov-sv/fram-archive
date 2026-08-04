@@ -31,6 +31,7 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='*', cast=Csv())
 CSRF_TRUSTED_ORIGINS = config('CSRF_TRUSTED_ORIGINS', default='', cast=Csv())
 
 INTERNAL_IPS = ['127.0.0.1']
+#INTERNAL_IPS = ['127.0.0.1', '10.26.201.104', '147.231.26.48']
 
 # Application definition
 
@@ -47,11 +48,10 @@ INSTALLED_APPS = [
     'el_pagination',
     'archive.apps.ArchiveConfig',  # Standard archive app
     'archive.apps.FramConfig',     # Registers 'fram' label for models
-    'debug_toolbar',
-    # 'debug_toolbar_line_profiler',
 ]
 
 MIDDLEWARE = [
+    # 'archive.middleware.TimingMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -59,9 +59,21 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'debug_toolbar.middleware.DebugToolbarMiddleware',
-    'django_cprofile_middleware.middleware.ProfilerMiddleware',
 ]
+
+# The toolbar and the profiler have nothing to do with DEBUG off. The app and the
+# middleware go in as a pair, as the toolbar's own system check complains when it
+# finds one without the other.
+if DEBUG:
+    INSTALLED_APPS += [
+        'debug_toolbar',
+        # 'debug_toolbar_line_profiler',
+    ]
+
+    MIDDLEWARE += [
+        'debug_toolbar.middleware.DebugToolbarMiddleware',
+        'django_cprofile_middleware.middleware.ProfilerMiddleware',
+    ]
 
 DEBUG_TOOLBAR_PANELS = [
     'debug_toolbar.panels.versions.VersionsPanel',
@@ -116,6 +128,7 @@ DATABASES = {
         'PASSWORD': '',                  # Not used with sqlite3.
         'HOST': '',                      # Set to empty string for localhost. Not used with sqlite3.
         'PORT': '',                      # Set to empty string for default. Not used with sqlite3.
+        'CONN_MAX_AGE': 60,
     }
 }
 
@@ -172,6 +185,11 @@ LOGGING = {
         "django.request": {
             "handlers": ["console"],
             "level": "ERROR",
+            "propagate": False,
+        },
+        "timing": {
+            "handlers": ['console'],
+            "level": 'INFO',
             "propagate": False,
         },
     },
