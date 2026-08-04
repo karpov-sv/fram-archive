@@ -465,20 +465,44 @@
        return out;
      }
 
-     function verticalLine(x, color, dash) {
-       return {type: 'line', x0: x, x1: x, yref: 'paper', y0: 0, y1: 1,
-               line: {color: color, width: 1, dash: dash}};
+     /* The marks are traces rather than layout shapes, which is what lets the
+        legend both name them and switch them off. Every line is a segment of its
+        own, separated from the next by the null that breaks the path. */
+     function markLine(periods, top) {
+       var x = [], y = [];
+
+       for (var i = 0; i < periods.length; i++) {
+         x.push(periods[i], periods[i], null);
+         y.push(0, top, null);
+       }
+
+       return {x: x, y: y};
      }
 
-     /* Everything worth marking on the periodogram: the periods the sampling
-        imprints on any of them, the period the curve is currently folded with,
-        and the ones that period would masquerade as. */
-     function periodogramShapes(data) {
-       var shapes = (data.aliases || []).map(function(a) {
-         return verticalLine(a, 'red', 'dot');
-       });
+     function markTrace(name, color, dash, periods, top) {
+       var line = markLine(periods, top);
 
+       return {
+         x: line.x, y: line.y,
+         mode: 'lines', type: 'scatter', name: name,
+         line: {width: 1, color: color, dash: dash},
+         /* Never steal the hover, nor the click that folds the curve, from the
+            periodogram itself */
+         hoverinfo: 'skip',
+       };
+     }
+
+     /* As high as the periodogram itself reaches, so that the marks span the plot
+        without widening its vertical range */
+     function markTop(data) {
+       return (data.power && data.power.length) ? Math.max.apply(null, data.power) : 1;
+     }
+
+     /* The period the light curve is folded with, and the ones it would
+        masquerade as, both clipped to the range that was actually searched */
+     function foldedMarks(data) {
        var p = parseFloat($('#periodInput').val());
+       var marks = {period: [], aliases: []};
 
        if (isFinite(p) && p > 0 && data.periods && data.periods.length) {
          var lo = Math.min.apply(null, data.periods);
@@ -486,27 +510,42 @@
 
          periodAliases(p).forEach(function(a) {
            if (a >= lo && a <= hi)
-             shapes.push(verticalLine(a, '#2ca02c', 'dash'));
+             marks.aliases.push(a);
          });
 
-         /* Drawn last, so that it stays on top of its own aliases */
          if (p >= lo && p <= hi)
-           shapes.push(verticalLine(p, '#2ca02c', 'solid'));
+           marks.period.push(p);
        }
 
-       return shapes;
+       return marks;
      }
 
-     /* The marks follow the folding period, which the user may edit at any time */
+     /* Where the two of them sit among the traces of plotPeriodogram() */
+     var MARK_PERIOD_TRACE = 1;
+     var MARK_ALIASES_TRACE = 2;
+
+     /* The marks follow the folding period, which the user may edit at any time.
+        Restyled rather than replotted, so that a mark switched off through the
+        legend stays off. */
      function updatePeriodogramMarks() {
        if (!window.periodogram)
          return;
 
-       Plotly.relayout('periodogramDiv', {shapes: periodogramShapes(window.periodogram)});
+       var top = markTop(window.periodogram);
+       var marks = foldedMarks(window.periodogram);
+       var period = markLine(marks.period, top);
+       var aliases = markLine(marks.aliases, top);
+
+       Plotly.restyle('periodogramDiv',
+                      {x: [period.x, aliases.x], y: [period.y, aliases.y]},
+                      [MARK_PERIOD_TRACE, MARK_ALIASES_TRACE]);
      }
 
      function plotPeriodogram(data) {
        window.periodogram = data;
+
+       var top = markTop(data);
+       var marks = foldedMarks(data);
 
        var traces = [{
          x: data.periods, y: data.power,
@@ -515,15 +554,13 @@
          hovertemplate: 'P = %{x} d<br>power = %{y:.3f}<extra></extra>'
        }];
 
-       /* Carrying no data, these exist only to give the lines below a legend */
-       traces.push({x: [], y: [], mode: 'lines', type: 'scatter', name: 'Folded period',
-                    line: {width: 1, color: '#2ca02c'}, hoverinfo: 'skip'});
-       traces.push({x: [], y: [], mode: 'lines', type: 'scatter', name: 'Its daily aliases',
-                    line: {width: 1, color: '#2ca02c', dash: 'dash'}, hoverinfo: 'skip'});
-       traces.push({x: [], y: [], mode: 'lines', type: 'scatter', name: 'Sampling',
-                    line: {width: 1, color: 'red', dash: 'dot'}, hoverinfo: 'skip'});
-
-       var shapes = periodogramShapes(data);
+       /* Kept at MARK_PERIOD_TRACE and MARK_ALIASES_TRACE, where the restyle
+          above expects to find them */
+       traces.push(markTrace('Folded period', '#2ca02c', 'solid', marks.period, top));
+       traces.push(markTrace('Its daily aliases', '#2ca02c', 'dash', marks.aliases, top));
+       /* The sampling of the observations imprints these on every periodogram,
+          and a peak sitting on one of them is most likely not a real period */
+       traces.push(markTrace('Sampling', 'red', 'dot', data.aliases || [], top));
 
        var best = data.peaks && data.peaks.length ? data.peaks[0] : null;
        var title = 'Lomb-Scargle periodogram of ' + data.npoints + ' points';
@@ -539,7 +576,6 @@
          title: {text: title},
          xaxis: {title: {text: 'Period, days'}, type: 'log', automargin: true, showline: true, zeroline: false},
          yaxis: {title: {text: 'Power'}, automargin: true, showline: true, zeroline: false, rangemode: 'tozero'},
-         shapes: shapes,
          hovermode: false,
          autosize: true,
          margin: {t: 30, r: 30},
@@ -783,8 +819,10 @@
       the curve is folded with, and the dashed green ones are the periods it would also appear at through the
       nightly sampling, at <code>1/(1/P &plusmn; n)</code> per day: a real 0.8724 d signal necessarily produces
       peaks at 0.4659 and 6.8393 d as well, so a peak falling on a dashed line is that same period over again
-      rather than a second one. The reported false alarm probability assumes pure noise and nothing else, so
-      it is optimistic. <i>Fold</i>, <i>Period</i> and <i>Epoch</i> are
+      rather than a second one. The marks follow the <i>Period</i> field, so they move as soon as it is edited,
+      and they are drawn whether or not the curve is actually folded. Each set of lines is named in the legend,
+      and clicking its entry there hides it. The reported false alarm probability assumes pure noise and
+      nothing else, so it is optimistic. <i>Fold</i>, <i>Period</i> and <i>Epoch</i> are
       applied in the browser, so editing them redraws immediately, and <i>&divide;2</i> / <i>&times;2</i> help
       with an eclipsing binary, whose periodogram peaks at half the true period.
     </div>
