@@ -1,5 +1,7 @@
 {% extends "template.html" %}
 
+{% load l10n %}
+
 {% block ptitle %}Sky View : FRAM Archive{% endblock %}
 {% block title %}
   Sky View from FRAM Widefield Cameras
@@ -45,8 +47,8 @@
         survey: defaultSurvey.id,
         hipsList: hipsList,
         mode: 'light',
-        fov: 5,
-        target: 'M45',
+        fov: {{ initial_fov|unlocalize }},
+        target: '{{ initial_target }}',
         projection: 'SIN',
         cooFrame: 'equatorial',
         showCooGrid: false,

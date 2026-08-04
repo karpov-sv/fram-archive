@@ -52,12 +52,19 @@ def hips2fits_url(hips, ra, dec, fov=PREVIEW_FOV, size=PREVIEW_SIZE):
     })
 
 
+# Field of view the sky view opens at when followed from a preview, in degrees.
+# Wider than the preview itself, so that the position arrives with some context
+# around it rather than filling the screen.
+PREVIEW_LINK_FOV = 0.25
+
+
 def position_previews(ra, dec):
     """Small images of the sky around the position, to judge its crowding.
 
     The FRAM mosaic shows what the survey itself sees, at the resolution the
     photometry is measured at, while the deeper and sharper atlas image next to
-    it reveals the neighbours actually blended into a measurement.
+    it reveals the neighbours actually blended into a measurement. Only the FRAM
+    one carries a link, as the sky view shows that very mosaic.
     """
     if dec > PANSTARRS_MIN_DEC:
         atlas = {'name': 'Pan-STARRS', 'hips': PANSTARRS_HIPS}
@@ -65,7 +72,14 @@ def position_previews(ra, dec):
         atlas = {'name': 'DSS2', 'hips': DSS_HIPS}
 
     return [
-        {'name': 'FRAM', 'url': hips2fits_url(HIPS_BASE_URL + 'color/', ra, dec)},
+        {
+            'name': 'FRAM',
+            'url': hips2fits_url(HIPS_BASE_URL + 'color/', ra, dec),
+            'link': reverse('sky_view') + '?' + urlencode({
+                'ra': ra, 'dec': dec, 'fov': PREVIEW_LINK_FOV,
+            }),
+            'title': 'Open this position in the sky view',
+        },
         {'name': atlas['name'], 'url': hips2fits_url(atlas['hips'], ra, dec)},
     ]
 
@@ -96,6 +110,11 @@ def links(request):
     return TemplateResponse(request, 'links.html')
 
 
+# Where the sky view opens when no position is asked for
+SKY_DEFAULT_TARGET = 'M45'
+SKY_DEFAULT_FOV = 5.0
+
+
 @permission_required('auth.can_view_images', raise_exception=True)
 def sky_view(request):
     hips_surveys = [
@@ -121,9 +140,27 @@ def sky_view(request):
         },
     ]
 
+    # Optional position to open at, as followed from a photometry preview. The
+    # target is formatted here rather than in the template, so that it reaches
+    # Aladin as the plain 'ra dec' string it expects whatever the locale.
+    try:
+        target = '%.6f %.6f' % (float(request.GET['ra']), float(request.GET['dec']))
+    except (KeyError, TypeError, ValueError):
+        target = SKY_DEFAULT_TARGET
+
+    try:
+        fov = float(request.GET['fov'])
+    except (KeyError, TypeError, ValueError):
+        fov = SKY_DEFAULT_FOV
+
+    # Degrees, and neither a point nor more than the whole sky
+    fov = min(max(fov, 1.0/3600), 180.0)
+
     context = {
         'hips_surveys': hips_surveys,
         'default_survey': hips_surveys[0],
+        'initial_target': target,
+        'initial_fov': fov,
     }
 
     return TemplateResponse(request, 'sky.html', context=context)
