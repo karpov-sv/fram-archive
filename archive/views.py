@@ -18,6 +18,58 @@ from fram.resolve import resolve
 from . import forms
 
 
+# All-sky mosaic co-added from the survey frames, in HiPS format. Served
+# publicly, which is what lets CDS render cutouts of it below.
+HIPS_BASE_URL = 'http://fram.fzu.cz/archive/hips/saturated/'
+
+# CDS service rendering a cutout of any HiPS into a plain image
+HIPS2FITS_URL = 'https://alasky.cds.unistra.fr/hips-image-services/hips2fits'
+
+# Deeper color imaging to compare the survey field with. Pan-STARRS covers the
+# sky north of dec -30 only, and renders a blank white image below it, so the
+# southern fields - which is most of what CTA-S observes - fall back to DSS2.
+PANSTARRS_HIPS = 'CDS/P/PanSTARRS/DR1/color-z-zg-g'
+PANSTARRS_MIN_DEC = -30.0
+DSS_HIPS = 'CDS/P/DSS2/color'
+
+# Field of view of the position previews, in degrees. A wide-field pixel is
+# about 6 arcsec, so this is roughly a hundred of them across.
+PREVIEW_FOV = 10.0/60
+PREVIEW_SIZE = 200  # Requested size of the previews, in pixels
+
+
+def hips2fits_url(hips, ra, dec, fov=PREVIEW_FOV, size=PREVIEW_SIZE):
+    """URL of a rendered cutout of a HiPS around the given position.
+
+    The color surveys used here carry their own colors, so no stretch or
+    colormap is asked for - hips2fits ignores those for a color HiPS anyway.
+    """
+    return HIPS2FITS_URL + '?' + urlencode({
+        'hips': hips,
+        'ra': ra, 'dec': dec, 'fov': fov,
+        'width': size, 'height': size,
+        'projection': 'TAN', 'coordsys': 'icrs', 'format': 'jpg',
+    })
+
+
+def position_previews(ra, dec):
+    """Small images of the sky around the position, to judge its crowding.
+
+    The FRAM mosaic shows what the survey itself sees, at the resolution the
+    photometry is measured at, while the deeper and sharper atlas image next to
+    it reveals the neighbours actually blended into a measurement.
+    """
+    if dec > PANSTARRS_MIN_DEC:
+        atlas = {'name': 'Pan-STARRS', 'hips': PANSTARRS_HIPS}
+    else:
+        atlas = {'name': 'DSS2', 'hips': DSS_HIPS}
+
+    return [
+        {'name': 'FRAM', 'url': hips2fits_url(HIPS_BASE_URL + 'color/', ra, dec)},
+        {'name': atlas['name'], 'url': hips2fits_url(atlas['hips'], ra, dec)},
+    ]
+
+
 # @cache_page(3600)
 def index(request):
     context = {}
@@ -46,27 +98,26 @@ def links(request):
 
 @permission_required('auth.can_view_images', raise_exception=True)
 def sky_view(request):
-    hips_base_url = 'http://fram.fzu.cz/archive/hips/saturated/'
     hips_surveys = [
         {
             'id': 'FRAM/P/color',
             'name': 'FRAM color',
-            'url': hips_base_url + 'color/',
+            'url': HIPS_BASE_URL + 'color/',
         },
         {
             'id': 'FRAM/P/B',
             'name': 'FRAM B',
-            'url': hips_base_url + 'B/',
+            'url': HIPS_BASE_URL + 'B/',
         },
         {
             'id': 'FRAM/P/V',
             'name': 'FRAM V',
-            'url': hips_base_url + 'V/',
+            'url': HIPS_BASE_URL + 'V/',
         },
         {
             'id': 'FRAM/P/R',
             'name': 'FRAM R',
-            'url': hips_base_url + 'R/',
+            'url': HIPS_BASE_URL + 'R/',
         },
     ]
 
@@ -153,6 +204,11 @@ def search(request, mode='images'):
                     context['lc_json'] = reverse('photometry_json') + '?' + urlencode(params)
                     context['lc_text'] = reverse('photometry_text') + '?' + urlencode(params)
                     context['lc_mjd'] = reverse('photometry_mjd') + '?' + urlencode(params)
+
+                    # Only the resolved queries have a position to preview
+                    if 'ra' in params:
+                        context['previews'] = position_previews(params['ra'], params['dec'])
+                        context['preview_fov'] = PREVIEW_FOV*60  # arcmin, for the caption
 
         context.update(params)
 

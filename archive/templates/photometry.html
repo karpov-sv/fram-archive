@@ -452,7 +452,36 @@
 
 {% block content %}
   <!-- Photometry -->
-  {% crispy form %}
+  <div class="row">
+    <div class="col-xl">
+      {% crispy form %}
+    </div>
+
+    {% comment %}
+      Atlas cutouts of the queried position, rendered by the CDS hips2fits
+      service. They are fetched by the browser straight from CDS, so a slow or
+      unreachable service delays nothing on this page, and a preview that fails
+      to load simply removes itself.
+    {% endcomment %}
+    {% if previews %}
+      <div class="col-xl-auto mb-4">
+        <div class="d-flex flex-wrap gap-2 justify-content-xl-end">
+          {% for preview in previews %}
+            <figure class="figure mb-0 text-center">
+              <img src="{{ preview.url }}" class="figure-img img-fluid rounded mb-1"
+                   style="width: 170px; height: 170px; background: #000;"
+                   alt="{{ preview.name }} image of the queried position"
+                   loading="lazy" onerror="this.closest('figure').style.display='none'">
+              <figcaption class="figure-caption">{{ preview.name }}</figcaption>
+            </figure>
+          {% endfor %}
+        </div>
+        <div class="form-text text-muted text-xl-end">
+          {{ preview_fov|floatformat:0 }}&prime; around the position, north up.
+        </div>
+      </div>
+    {% endif %}
+  </div>
 
   {% if not lc %}
     <div class="form-text text-muted">
