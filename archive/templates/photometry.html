@@ -508,8 +508,10 @@
     {# Holds the spinner, and the error message should the data fail to arrive #}
     <div id="messageDiv" class="mt-4"></div>
 
-    {# Revealed once there is something to show, so that the downloads below do
-       not offer themselves before it is known whether the query returned data #}
+    {% comment %}
+      Revealed once there is something to show, so that the downloads below do
+      not offer themselves before it is known whether the query returned data.
+    {% endcomment %}
     <div id="dataDiv">
     <div id="lcDiv" class="mt-4" style="width:100%, height:600px">
       <!-- <img src="{{ lc }}" class="img-fluid"> -->
@@ -523,8 +525,10 @@
     {% endif %}
     </div>{# dataDiv #}
 
-    {# Outside it on purpose: these describe the queried position rather than the
-       data, so they stay useful even when the light curve fails to load #}
+    {% comment %}
+      Outside it on purpose: these describe the queried position rather than the
+      data, so they stay useful even when the light curve fails to load.
+    {% endcomment %}
 
     {% if ra or dec %}
       <div>
