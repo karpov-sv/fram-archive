@@ -151,6 +151,27 @@ def get_lc(params):
     return lc
 
 
+# Fewest measurements a band needs before it is shown, and searched, at all. A
+# single point is nothing to draw a light curve from, and it carries no
+# information for the period search either: centring a band on its own median
+# leaves a lone point at exactly zero, which adds nothing but its weight to the
+# normalization.
+MIN_POINTS_PER_FILTER = 2
+
+
+def displayed_mask(filters, idx0, minimum=MIN_POINTS_PER_FILTER):
+    """Of the points passing the cuts, the ones that actually reach the plot."""
+    mask = np.zeros_like(idx0)
+
+    for fn in np.unique(filters):
+        idx = idx0 & (filters == fn)
+
+        if np.sum(idx) >= minimum:
+            mask |= idx
+
+    return mask
+
+
 # The query parameters the data themselves depend on. Everything else - the
 # resolved name, the plot size, the output mode - only affects the presentation,
 # so it must not take part in the cache key below.
@@ -361,7 +382,8 @@ def period(request):
     """Search the displayed light curve for a period."""
     data = cached_lc(request)
 
-    idx = data['idx0']
+    # The very points the plot draws, so that the two agree on how many there are
+    idx = displayed_mask(data['filters'], data['idx0'])
     mjds = np.asarray(data['mjds'], dtype=float)[idx]
     mags = np.asarray(data['mags'], dtype=float)[idx]
     magerrs = np.asarray(data['magerrs'], dtype=float)[idx]
@@ -449,7 +471,16 @@ def lc(request, mode="jpg", size=800):
     else:
         title = ''
 
-    title += '%.4f %.3f %.3f - %d pts' % (ra, dec, sr, len(mags))
+    # The count is of what is drawn below, not of what the query returned: with
+    # the quality cuts on, the two differ by a factor of about two, and the
+    # caption used to advertise the larger of them
+    shown = np.sum(displayed_mask(filters, idx0))
+
+    title += '%.4f %.3f %.3f - ' % (ra, dec, sr)
+    if shown != len(mags):
+        title += '%d of %d pts' % (shown, len(mags))
+    else:
+        title += '%d pts' % len(mags)
 
     xi,eta = radectoxieta(ras, decs, ra, dec)
     xi *= 3600
@@ -464,7 +495,7 @@ def lc(request, mode="jpg", size=800):
         for fn in np.unique(filters):
             idx = idx0 & (filters == fn)
 
-            if len(mags[idx]) < 2:
+            if len(mags[idx]) < MIN_POINTS_PER_FILTER:
                 continue
 
             ax.errorbar(times[idx], mags[idx], magerrs[idx], fmt='.', color=cols[idx][0], capsize=0, alpha=0.3)
@@ -488,7 +519,7 @@ def lc(request, mode="jpg", size=800):
         for fn in np.unique(filters):
             idx = idx0 & (filters == fn)
 
-            if len(mags[idx]) < 2:
+            if len(mags[idx]) < MIN_POINTS_PER_FILTER:
                 continue
 
             times_idx = [_.isoformat() for _ in times[idx]]

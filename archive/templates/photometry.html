@@ -438,7 +438,76 @@
          });
      }
 
+     /* Frequency the daily aliases are spaced by, in cycles per day. The
+        observations are scheduled by the night rather than by the stars, so it is
+        the solar day that dominates the sampling, and measurably so: the aliases
+        of a real period land on it to six decimals, while the sidereal day sits
+        0.0027 c/d away from them. */
+     var ALIAS_FREQUENCY = 1.0;
+
+     /* How many daily aliases either side of a period to mark */
+     var ALIAS_ORDERS = 2;
+
+     /* The periods one and the same signal also shows up at, through the daily
+        sampling: 1/(1/P +- n) for the first few n. An eclipsing binary at 0.8724 d
+        thus appears at 0.4659 and at 6.8393 as well. */
+     function periodAliases(p) {
+       var f0 = 1/p, out = [];
+
+       for (var n = 1; n <= ALIAS_ORDERS; n++) {
+         [1, -1].forEach(function(s) {
+           var f = f0 + s*n*ALIAS_FREQUENCY;
+           if (f > 0)
+             out.push(1/f);
+         });
+       }
+
+       return out;
+     }
+
+     function verticalLine(x, color, dash) {
+       return {type: 'line', x0: x, x1: x, yref: 'paper', y0: 0, y1: 1,
+               line: {color: color, width: 1, dash: dash}};
+     }
+
+     /* Everything worth marking on the periodogram: the periods the sampling
+        imprints on any of them, the period the curve is currently folded with,
+        and the ones that period would masquerade as. */
+     function periodogramShapes(data) {
+       var shapes = (data.aliases || []).map(function(a) {
+         return verticalLine(a, 'red', 'dot');
+       });
+
+       var p = parseFloat($('#periodInput').val());
+
+       if (isFinite(p) && p > 0 && data.periods && data.periods.length) {
+         var lo = Math.min.apply(null, data.periods);
+         var hi = Math.max.apply(null, data.periods);
+
+         periodAliases(p).forEach(function(a) {
+           if (a >= lo && a <= hi)
+             shapes.push(verticalLine(a, '#2ca02c', 'dash'));
+         });
+
+         /* Drawn last, so that it stays on top of its own aliases */
+         if (p >= lo && p <= hi)
+           shapes.push(verticalLine(p, '#2ca02c', 'solid'));
+       }
+
+       return shapes;
+     }
+
+     /* The marks follow the folding period, which the user may edit at any time */
+     function updatePeriodogramMarks() {
+       if (!window.periodogram)
+         return;
+
+       Plotly.relayout('periodogramDiv', {shapes: periodogramShapes(window.periodogram)});
+     }
+
      function plotPeriodogram(data) {
+       window.periodogram = data;
+
        var traces = [{
          x: data.periods, y: data.power,
          mode: 'lines', type: 'scatter', name: 'Power',
@@ -446,12 +515,15 @@
          hovertemplate: 'P = %{x} d<br>power = %{y:.3f}<extra></extra>'
        }];
 
-       /* The sampling of the observations imprints these on every periodogram,
-          and a peak sitting on one of them is most likely not a real period */
-       var shapes = (data.aliases || []).map(function(a) {
-         return {type: 'line', x0: a, x1: a, yref: 'paper', y0: 0, y1: 1,
-                 line: {color: 'red', width: 1, dash: 'dot'}};
-       });
+       /* Carrying no data, these exist only to give the lines below a legend */
+       traces.push({x: [], y: [], mode: 'lines', type: 'scatter', name: 'Folded period',
+                    line: {width: 1, color: '#2ca02c'}, hoverinfo: 'skip'});
+       traces.push({x: [], y: [], mode: 'lines', type: 'scatter', name: 'Its daily aliases',
+                    line: {width: 1, color: '#2ca02c', dash: 'dash'}, hoverinfo: 'skip'});
+       traces.push({x: [], y: [], mode: 'lines', type: 'scatter', name: 'Sampling',
+                    line: {width: 1, color: 'red', dash: 'dot'}, hoverinfo: 'skip'});
+
+       var shapes = periodogramShapes(data);
 
        var best = data.peaks && data.peaks.length ? data.peaks[0] : null;
        var title = 'Lomb-Scargle periodogram of ' + data.npoints + ' points';
@@ -472,7 +544,7 @@
          autosize: true,
          margin: {t: 30, r: 30},
          font: {size: 10},
-         showlegend: false,
+         showlegend: true,
        }, config);
 
        /* Clicking a peak folds the light curve at that period */
@@ -626,6 +698,7 @@
          return;
 
        Plotly.react('lcDiv', lcTraces(), Object.assign(lcLayout(), {title: {text: window.lcTitle}}));
+       updatePeriodogramMarks();
      }
 
      function plot_lcs(id, title, lcs) {
@@ -706,8 +779,12 @@
       whole magnitudes apart while the variability being looked for is far smaller. Clicking a peak folds the
       curve at that period; the dotted red lines mark the periods the observations themselves imprint on any
       periodogram &mdash; the day with its harmonics, the sidereal day and the year &mdash; and a peak sitting
-      on one of those comes from the sampling rather than from the star. The reported false alarm probability
-      assumes pure noise and nothing else, so it is optimistic. <i>Fold</i>, <i>Period</i> and <i>Epoch</i> are
+      on one of those comes from the sampling rather than from the star. The solid green line is the period
+      the curve is folded with, and the dashed green ones are the periods it would also appear at through the
+      nightly sampling, at <code>1/(1/P &plusmn; n)</code> per day: a real 0.8724 d signal necessarily produces
+      peaks at 0.4659 and 6.8393 d as well, so a peak falling on a dashed line is that same period over again
+      rather than a second one. The reported false alarm probability assumes pure noise and nothing else, so
+      it is optimistic. <i>Fold</i>, <i>Period</i> and <i>Epoch</i> are
       applied in the browser, so editing them redraws immediately, and <i>&divide;2</i> / <i>&times;2</i> help
       with an eclipsing binary, whose periodogram peaks at half the true period.
     </div>
