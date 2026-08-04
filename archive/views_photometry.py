@@ -36,6 +36,56 @@ def radectoxieta(ra, dec, ra0=0, dec0=0):
     return xi,eta
 
 
+# How many times a quality cut is re-applied around the updated median
+CLIP_ITERATIONS = 3
+
+
+def clip_column(idx, values, side='upper', nsigma=3.0):
+    """Points of `idx` surviving an iterative clip of `values` around its median.
+
+    `side` tells which tail goes: `upper` and `lower` reject the large and the
+    small values, `both` keeps a symmetric band. The scale is the median absolute
+    deviation of the points still selected.
+
+    A column carrying nothing to cut on - all of it missing, or constant, or a
+    selection already emptied by an earlier cut - simply leaves the selection
+    alone. Without that the median of an empty slice is a NaN, every comparison
+    against it is false, and the light curve silently comes out empty.
+    """
+    values = np.asarray(values, dtype=float)
+
+    for _ in range(CLIP_ITERATIONS):
+        if not np.any(idx):
+            break
+
+        # Checked before taking the median, which warns about an all-NaN slice
+        # rather than just returning one
+        selected = values[idx]
+        if not np.any(np.isfinite(selected)):
+            break
+
+        median = np.nanmedian(selected)
+        sigma = mad_std(selected, ignore_nan=True)
+
+        if not np.isfinite(median) or not np.isfinite(sigma) or sigma <= 0:
+            break
+
+        if side == 'upper':
+            passed = values <= median + nsigma*sigma
+        elif side == 'lower':
+            passed = values >= median - nsigma*sigma
+        else:
+            passed = np.abs(values - median) <= nsigma*sigma
+
+        # Nothing left to converge to once a pass rejects nobody
+        if np.sum(idx & passed) == np.sum(idx):
+            break
+
+        idx = idx & passed
+
+    return idx
+
+
 def get_lc(request):
     lc = Photometry.objects.order_by('time')
 
@@ -155,20 +205,11 @@ def lc(request, mode="jpg", size=800):
         for fn in np.unique(filters):
             idx = idx0 & (filters == fn)
 
-            for _ in range(3):
-                idx &= stds <= np.median(stds[idx]) + 3.0*mad_std(stds[idx])
-
-            for _ in range(3):
-                idx &= fwhms <= np.median(fwhms[idx]) + 3.0*mad_std(fwhms[idx])
-
-            for _ in range(3):
-                idx &= np.abs(color_term - np.median(color_term[idx])) <= 3.0*mad_std(color_term[idx])
-
-            for _ in range(3):
-                idx &= zp_std <= np.median(zp_std[idx]) + 3.0*mad_std(zp_std[idx])
-
-            for _ in range(3):
-                idx &= final_frac >= np.median(final_frac[idx]) - 3.0*mad_std(final_frac[idx])
+            idx = clip_column(idx, stds, 'upper')
+            idx = clip_column(idx, fwhms, 'upper')
+            idx = clip_column(idx, color_term, 'both')
+            idx = clip_column(idx, zp_std, 'upper')
+            idx = clip_column(idx, final_frac, 'lower')
 
             mask |= idx
 

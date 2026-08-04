@@ -18,6 +18,14 @@ DARK_CACHE_SIZE = 4
 IMAGE_CACHE_SIZE = 4
 IMAGE_DATA_MODES = {"raw", "preview", "processed", "analysis", "cutout"}
 
+# A flat field pixel below this carries no usable signal - dividing by it either
+# blows up into an infinity, where the flat is exactly zero, or amplifies pure
+# noise by a large factor. The extraction pipeline calls these highly vignetted
+# regions and masks them out (see extract_photometry.py); here they are left
+# un-flatted instead, so that a preview still shows the pixels rather than a
+# hole, and they are masked for the analysis just as the pipeline does.
+FLAT_MIN = 0.5
+
 
 @dataclass
 class LoadedImage:
@@ -161,7 +169,13 @@ def _processed_cached(science_key, dark_key, flat_key):
 
     if flat_key is not None:
         flat, _ = _load_fits_cached(flat_key)
-        data *= np.nanmedian(flat) / flat
+        # The normalization is taken over the whole flat, exactly as the
+        # extraction pipeline does it, so that what the archive shows is what the
+        # photometry was measured on. Only the divisor is floored: a deeply
+        # vignetted pixel would otherwise be amplified without bound, and the odd
+        # dead one - there is literally one in some of the flats - turns into an
+        # infinity that then spreads through every percentile taken of the frame.
+        data *= np.nanmedian(flat) / np.maximum(flat, FLAT_MIN)
 
     return data, header
 
@@ -206,6 +220,13 @@ def load_image_data(
             if dark.shape == mask.shape:
                 bad_dark = dark > np.median(dark) + 10.0 * np.std(dark)
                 mask |= bad_dark
+        if flat_key is not None:
+            # Highly vignetted regions, as in extract_photometry.py. Their pixels
+            # were left un-flatted above, so without this they would enter the
+            # analysis carrying values the photometry itself never sees.
+            flat, _ = _load_fits_cached(flat_key)
+            if flat.shape == mask.shape:
+                mask |= flat < FLAT_MIN
 
     return LoadedImage(data.copy(), header.copy(), None if mask is None else mask.copy())
 

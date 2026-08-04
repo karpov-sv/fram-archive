@@ -253,20 +253,34 @@ def image_response(data, qq=[2.5, 99.75], stretch='linear', cmap='Blues_r', qual
     pixel coordinates of `data` itself, so the caller is the one to worry about
     any cropping or scaling it applied beforehand.
     """
-    limits = np.percentile(data[np.isfinite(data)], qq)
+    # A frame may have no finite pixel at all, e.g. a cutout falling entirely
+    # outside the data, and a calibration one may be constant. Neither has a
+    # scaling of its own, and both used to end as a percentile over nothing or
+    # as a division by zero.
+    finite = data[np.isfinite(data)]
+    limits = np.percentile(finite, qq) if finite.size else np.array([0.0, 1.0])
 
-    if stretch == 'histeq':
+    if limits[1] <= limits[0]:
+        limits[1] = limits[0] + 1.0
+
+    if stretch == 'histeq' and finite.size and finite.min() < finite.max():
+        # Built from the finite pixels alone: the transform is derived from the
+        # data themselves, so NaNs would go into the histogram it equalizes, and
+        # a frame of no range at all gives it nothing to equalize
         norm = ImageNormalize(
-            stretch=HistEqStretch(data),
+            stretch=HistEqStretch(finite),
             vmin=limits[0],
             vmax=limits[1],
         )
+    elif stretch == 'histeq':
+        norm = None
     elif stretch != 'linear':
+        # vmin / vmax rather than min_cut / max_cut, which astropy 6.1 deprecated
         norm = simple_norm(
             data,
             stretch,
-            min_cut=limits[0],
-            max_cut=limits[1],
+            vmin=limits[0],
+            vmax=limits[1],
             power=2,
         )
     else:
@@ -277,7 +291,9 @@ def image_response(data, qq=[2.5, 99.75], stretch='linear', cmap='Blues_r', qual
     else:
         data = norm(data)
 
-    data = np.clip(data, 0.0, 1.0)
+    # The non-finite pixels have no place on the colormap, so they are sent to
+    # the bottom of it rather than left to whatever it makes of a NaN
+    data = np.clip(np.nan_to_num(np.asarray(data, dtype=np.double)), 0.0, 1.0)
 
     cmap = colormaps[cmap]
     data = cmap(data) # RGBA
@@ -807,8 +823,13 @@ def image_analysis(request, id=0, mode='fwhm'):
         ax.set_xlabel(f"ADU")
 
         ax = fig.add_subplot(2, 1, 2)
-        limits = np.percentile(data.flatten(), [2.5, 97.5])
+        limits = np.nanpercentile(data.flatten(), [2.5, 97.5])
         limits = [int(np.floor(limits[0])), int(np.ceil(limits[1]))]
+        # One bin per ADU, but a frame flat enough to round to a single ADU - a
+        # bias or a masterflat, which is exactly what this view is for - leaves
+        # no range to bin over at all
+        if limits[1] <= limits[0]:
+            limits[1] = limits[0] + 1
         ax.hist(data.flatten(), bins=min(1000, limits[1]-limits[0]), range=limits)
         ax.set_yscale('log')
         ax.set_title(f"{'raw' if 'raw' in request.GET else 'processed'}  :  2.5% {limits[0]:.1f} median {np.nanmedian(data):.1f} 97.5% {limits[1]:.1f}")
