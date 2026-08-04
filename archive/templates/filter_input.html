@@ -1,0 +1,8 @@
+{% comment %}
+  One editable value of a filter, to be placed inside an active pagination item.
+  Expects `param` - the GET parameter it stands for - and `value`. Editing it and
+  pressing Enter reloads the page with the new value, see filter_edit.js
+{% endcomment %}
+<input type="text" class="page-link filter-input" data-filter-param="{{ param }}" value="{{ value }}"
+       size="{{ value|stringformat:'s'|length|add:0 }}"
+       title="Edit and press Enter to apply, Escape to revert">
