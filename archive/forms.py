@@ -68,6 +68,16 @@ class ImagesSearchForm(forms.Form):
 
     nofiltering = forms.BooleanField(required=False, label="Disable quality cuts")
 
+    sigma = forms.FloatField(
+        min_value=0, required=False, label="Clip, sigma",
+        widget=forms.NumberInput(attrs={
+            'placeholder': 'Off',
+            'title': 'Reject the measurements deviating from the median magnitude of their camera '
+                     'and filter by more than this many sigma. Off by default, as it also removes '
+                     'the deep minima of a genuine variable.',
+        })
+    )
+
     def __init__(self, *args, **kwargs):
         mode = kwargs.pop('mode')
 
@@ -103,6 +113,7 @@ class ImagesSearchForm(forms.Form):
                 Column('night2', css_class='col-md-auto'),
                 Column('filename', css_class='col-md') if mode == 'images' else None,
                 Column('maxdist', css_class='col-md') if mode == 'cutouts' else None,
+                Column('sigma', css_class='col-md-auto') if mode == 'photometry' else None,
                 Column('nofiltering', css_class="col-md mb-2") if mode == 'photometry' else None,
                 Column(
                     Submit('search', 'Search', css_class='btn-primary mb-1'),

@@ -177,7 +177,7 @@ def displayed_mask(filters, idx0, minimum=MIN_POINTS_PER_FILTER):
 # so it must not take part in the cache key below.
 LC_PARAMS = [
     'ra', 'dec', 'sr', 'night', 'night1', 'night2', 'site', 'ccd', 'filter',
-    'magerr', 'nstars', 'nofiltering',
+    'magerr', 'nstars', 'nofiltering', 'sigma',
 ]
 
 LC_CACHE_TIMEOUT = 600
@@ -283,7 +283,37 @@ def build_lc(params):
 
         idx0 = mask
 
+    # Optional clipping of the magnitudes themselves, off unless asked for. It is
+    # kept apart from the cuts above on purpose: those reject the measurements
+    # known to be bad, whereas this one rejects whatever deviates, and so removes
+    # the deep minima of a genuine variable along with the outliers.
+    #
+    # Grouped by camera as well as by filter, which the cuts above have no need
+    # to be: they clip quantities describing a frame, while this one clips the
+    # magnitude, and the zero points of two cameras need not agree closely enough
+    # for a common median to be meaningful. Clipping around one would reject the
+    # camera that sits furthest from it rather than the measurements that deviate.
+    try:
+        sigma = float(params.get('sigma') or 0)
+    except ValueError:
+        sigma = 0
+
+    # Anything not positive is simply off, and is reported as such
+    if not np.isfinite(sigma) or sigma <= 0:
+        sigma = 0
+
+    if sigma > 0 and np.any(idx0):
+        mask = np.zeros_like(idx0)
+
+        for cc in np.unique(ccds):
+            for fn in np.unique(filters):
+                idx = idx0 & (ccds == cc) & (filters == fn)
+                mask |= clip_column(idx, mags, 'both', sigma)
+
+        idx0 = mask
+
     return {
+        'sigma': sigma,
         'times': times, 'mjds': np.asarray(mjds), 'sites': sites, 'ccds': ccds,
         'filters': filters, 'cols': cols, 'ras': ras, 'decs': decs,
         'mags': mags, 'magerrs': magerrs, 'flags': flags, 'fwhms': fwhms,
@@ -481,6 +511,10 @@ def lc(request, mode="jpg", size=800):
         title += '%d of %d pts' % (shown, len(mags))
     else:
         title += '%d pts' % len(mags)
+
+    # Worth saying, as it is off by default and does reject real variability
+    if data['sigma'] > 0:
+        title += ' - clipped at %g sigma' % data['sigma']
 
     xi,eta = radectoxieta(ras, decs, ra, dec)
     xi *= 3600

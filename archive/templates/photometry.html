@@ -807,6 +807,12 @@
       Use the site, CCD, camera serial, filter, target ID, and night range fields to narrow the source images.
       Night values use <code>YYYYMMDD</code>. Leave quality cuts enabled for the cleaned light curve, or select
       <i>Disable quality cuts</i> to include all matching measurements.<br>
+      <i>Clip</i> additionally rejects the measurements deviating from the median magnitude by more than the
+      given number of median absolute deviations, taken separately for every camera and filter, as their zero
+      points need not agree closely enough for a common median to mean anything. It is empty, and so disabled,
+      on purpose: unlike the quality cuts, which reject what is known to be bad, this one rejects whatever
+      deviates, and so removes the deep minima of a genuine variable together with the outliers. Useful for
+      cleaning up a star expected to be constant, and best avoided otherwise.<br>
       The result view groups points by filter in an interactive light-curve plot with error bars and hover
       details. It also provides full and filtered text downloads, plus quick links to SIMBAD, AAVSO VSX, NSVS,
       ASAS-SN, and Aladin for the query position.<br>
