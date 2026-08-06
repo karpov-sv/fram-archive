@@ -115,6 +115,9 @@ tmp/
 .aider*
 photometry
 data
+calibrations
+static/
+CLAUDE.md
 
 # Test environment
 .env.test
