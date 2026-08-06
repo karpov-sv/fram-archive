@@ -388,6 +388,157 @@ def displayed_mask(filters, idx0, minimum=MIN_POINTS_PER_FILTER):
     return mask
 
 
+# The colors that may be displayed, as the pairs of bands they are made of. The
+# archive has B, V, R and I of a star; z sits on one camera alone and N is no
+# photometric band at all, so neither has a companion to make a color with.
+COLOR_PAIRS = [('B', 'V'), ('V', 'R'), ('V', 'I'), ('R', 'I')]
+
+# Where the colors are drawn. Deliberately unlike the colors of the bands
+# themselves, since the two sets share one legend.
+COLOR_COLORS = {'B-V': '#8c564b', 'V-R': '#9467bd', 'V-I': '#17becf', 'R-I': '#7f7f7f'}
+
+# Largest separation in time between the two measurements of a color, in days.
+# The real constraint is that they belong to the same night; this one only backs
+# it up for a measurement whose frame has since left the archive, and which has
+# thus no night to be compared by.
+COLOR_WINDOW = 0.5
+
+
+def nearest_index(values, others):
+    """For every element of `values`, the index of the closest element of `others`.
+
+    Both are expected sorted, which is what lets it cost a binary search per
+    element instead of a full scan.
+    """
+    pos = np.searchsorted(others, values)
+    left = np.clip(pos - 1, 0, len(others) - 1)
+    right = np.clip(pos, 0, len(others) - 1)
+
+    closer = np.abs(values - others[left]) <= np.abs(values - others[right])
+
+    return np.where(closer, left, right)
+
+
+def pair_bands(mjds1, mjds2, window=COLOR_WINDOW):
+    """Match the measurements of two bands that were taken together.
+
+    Two measurements make a color when each is the closest the other has, which
+    is what keeps the matching one to one: three exposures in B and one in V
+    yield a single color rather than three sharing the same V, and the two that
+    lost are simply dropped. A pair separated by more than `window` days is not
+    a pair at all, however close the two are to each other.
+
+    Returns the indices into `mjds1` and `mjds2` of the measurements that paired
+    up, in no particular order.
+    """
+    none = np.array([], dtype=int)
+
+    if not len(mjds1) or not len(mjds2):
+        return none, none
+
+    order1, order2 = np.argsort(mjds1), np.argsort(mjds2)
+    sorted1, sorted2 = mjds1[order1], mjds2[order2]
+
+    to2 = nearest_index(sorted1, sorted2)
+    to1 = nearest_index(sorted2, sorted1)
+
+    # The closest measurement of the other band has to point back
+    i1 = np.where(to1[to2] == np.arange(len(sorted1)))[0]
+    i2 = to2[i1]
+
+    close = np.abs(sorted1[i1] - sorted2[i2]) <= window
+
+    return order1[i1[close]], order2[i2[close]]
+
+
+def compute_colors(data, idx, window=COLOR_WINDOW):
+    """Colors of the star, from the measurements of two bands taken together.
+
+    A color is the difference of two magnitudes measured on different frames, so
+    it only means anything when the two were taken close enough in time for the
+    star not to have moved between them. They are required to belong to the same
+    night of the same camera, and then to be each other's nearest measurement
+    within `window` days.
+
+    The camera is part of that on purpose: the zero points of two of them need
+    not agree closely enough for their difference to be a color of the star
+    rather than one of the instruments. It costs nothing here, as every camera of
+    the archive carries the whole filter set.
+    """
+    mjds = np.asarray(data['mjds'], dtype=float)
+    mags = np.asarray(data['mags'], dtype=float)
+    magerrs = np.asarray(data['magerrs'], dtype=float)
+    filters = np.asarray(data['filters'])
+    sites, ccds = np.asarray(data['sites']), np.asarray(data['ccds'])
+    nights = np.asarray(data['nights'], dtype=object)
+
+    # A measurement missing either of these carries nothing to a color
+    idx = idx & np.isfinite(mjds) & np.isfinite(mags) & np.isfinite(magerrs)
+
+    # The measurements of every camera, night and band, so that the matching
+    # below looks at one night at a time instead of scanning the whole curve
+    # once per color it makes
+    groups = {}
+    for i in np.where(idx)[0]:
+        groups.setdefault((sites[i], ccds[i], nights[i], filters[i]), []).append(i)
+
+    # Deduplicated rather than sorted, as a night may well be missing and None
+    # does not compare with a string
+    visits = list(dict.fromkeys(_[:3] for _ in groups))
+
+    colors = []
+
+    for f1, f2 in COLOR_PAIRS:
+        pairs1, pairs2 = [], []
+
+        for visit in visits:
+            sel1 = groups.get(visit + (f1,))
+            sel2 = groups.get(visit + (f2,))
+
+            if not sel1 or not sel2:
+                continue
+
+            sel1, sel2 = np.array(sel1), np.array(sel2)
+            i1, i2 = pair_bands(mjds[sel1], mjds[sel2], window=window)
+
+            pairs1.append(sel1[i1])
+            pairs2.append(sel2[i2])
+
+        if not pairs1:
+            continue
+
+        i1, i2 = np.concatenate(pairs1), np.concatenate(pairs2)
+
+        # Held to the same minimum as a band, and for the same reason
+        if len(i1) < MIN_POINTS_PER_FILTER:
+            continue
+
+        # A color sits at the mean time of the two measurements it is made of
+        cmjds = 0.5*(mjds[i1] + mjds[i2])
+
+        order = np.argsort(cmjds)
+        i1, i2, cmjds = i1[order], i2[order], cmjds[order]
+
+        name = '%s-%s' % (f1, f2)
+
+        colors.append({
+            'name': name,
+            'color': COLOR_COLORS.get(name, 'black'),
+            'mjds': [float(_) for _ in cmjds],
+            'times': [Time(_, format='mjd').datetime.isoformat() for _ in cmjds],
+            'values': [float(_) for _ in mags[i1] - mags[i2]],
+            'errors': [float(_) for _ in np.hypot(magerrs[i1], magerrs[i2])],
+            # How far apart the two measurements actually were, in seconds. A
+            # filter wheel cycles in tens of them, so a color of a wholly
+            # different order is one made at two ends of a night.
+            'dts': [float(_) for _ in 86400*np.abs(mjds[i1] - mjds[i2])],
+            'sites': list(sites[i1]), 'ccds': list(ccds[i1]),
+            'nights': list(nights[i1]),
+        })
+
+    return colors
+
+
 # The query parameters the data themselves depend on. Everything else - the
 # resolved name, the plot size, the output mode - only affects the presentation,
 # so it must not take part in the cache key below.
@@ -846,7 +997,14 @@ def lc(request, mode="jpg", size=800):
                         'nights': list(nights[idx]),
                         'npoints': [int(_) for _ in npoints[idx]] if npoints is not None else None})
 
-        data = {'name': name, 'title': title, 'ra': ra, 'dec': dec, 'sr': sr, 'lcs': lcs}
+        # Made of the very points drawn above, and so of everything the cuts, the
+        # clipping and the averaging left of them
+        colors = []
+        if request.GET.get('colors'):
+            colors = compute_colors(data, displayed_mask(filters, idx0))
+
+        data = {'name': name, 'title': title, 'ra': ra, 'dec': dec, 'sr': sr,
+                'lcs': lcs, 'colors': colors}
 
         return HttpResponse(json.dumps(data, default=str), content_type="application/json")
 

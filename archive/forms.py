@@ -76,6 +76,14 @@ class ImagesSearchForm(forms.Form):
 
     nofiltering = forms.BooleanField(required=False, label="Disable quality cuts")
 
+    colors = forms.BooleanField(
+        required=False, label="Compute colors",
+        widget=forms.CheckboxInput(attrs={
+            'title': 'Show the colors of the star below the light curve, made of the '
+                     'measurements of two bands taken close in time on the same night',
+        })
+    )
+
     sigma = forms.FloatField(
         min_value=0, required=False, label="Clip, sigma",
         widget=forms.NumberInput(attrs={
@@ -142,10 +150,11 @@ class ImagesSearchForm(forms.Form):
                 Column('filename', css_class='col-md') if mode == 'images' else None,
                 Column('maxdist', css_class='col-md') if mode == 'cutouts' else None,
                 Column('sigma', css_class='col-md-auto') if mode == 'photometry' else None,
-                Column('nofiltering', css_class="col-md mb-2") if mode == 'photometry' else None,
+                Column('nofiltering', css_class="col-md-auto mb-2") if mode == 'photometry' else None,
                 css_class='align-items-end',
             ),
             Row(
+                Column('colors', css_class="col-md mb-2"),
                 Column('average', css_class='col-md-auto mb-2'),
                 Column('average_mode', css_class='col-md-auto'),
                 Column('average_window', css_class='col-md-auto'),

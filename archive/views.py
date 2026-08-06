@@ -197,7 +197,7 @@ def search(request, mode='images'):
             is_correct = True
 
             for _ in ['site', 'type', 'ccd', 'filter', 'night1', 'night2', 'serial', 'target', 'maxdist', 'filename', 'coords', 'magerr', 'nstars', 'nofiltering', 'sigma',
-                      'average', 'average_window', 'average_mode']:
+                      'average', 'average_window', 'average_mode', 'colors']:
                 if form.cleaned_data.get(_) and form.cleaned_data[_] != 'all':
                     params[_] = request.POST.get(_)
 

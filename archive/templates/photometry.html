@@ -623,6 +623,7 @@
            $('#messageDiv').hide();
 
            window.lcs = data['lcs'];
+           window.colors = data['colors'];
            plot_lcs('lcDiv', data['title'], data['lcs']);
          })
          .catch(function(error) {
@@ -640,6 +641,25 @@
               + (lc.npoints ? '<br>averaged over ' + lc.npoints[ii] + ' points' : '');
      }
 
+     /* A span of time in whatever unit reads best for it: a filter wheel cycles
+        in seconds, while a color made at the two ends of a night is hours */
+     function formatGap(seconds) {
+       if (seconds < 90)
+         return seconds.toFixed(0) + ' s';
+       else if (seconds < 5400)
+         return (seconds/60).toFixed(1) + ' min';
+       else
+         return (seconds/3600).toFixed(1) + ' h';
+     }
+
+     /* Hover text of a single color. How far apart the two measurements were is
+        worth saying, as it is what the color is only as good as. */
+     function colorLabel(color, ii) {
+       return 'MJD = ' + color.mjds[ii].toFixed(2)
+              + '<br>' + color.sites[ii] + ' ' + color.ccds[ii]
+              + '<br>' + formatGap(color.dts[ii]) + ' apart';
+     }
+
      /* Folding needs no server at all - the browser already has the time of
         every point, so the phase is computed right here. */
      function foldingPeriod() {
@@ -652,41 +672,42 @@
        return isFinite(t) ? t : 0;
      }
 
-     /* One light curve as a Plotly trace, either against time or against phase.
-        In the folded view the points are repeated in the next cycle, which is
-        what makes a minimum sitting at the edge readable. */
-     function lcTrace(lc, custom, scatter_type) {
+     /* A set of points as it is drawn: against time as it stands, or against the
+        phase of the folding period. In the folded view the points are repeated in
+        the next cycle, which is what makes a minimum sitting at the edge
+        readable, and everything travelling with them is repeated as well. */
+     function foldedPoints(mjds, times, y, err, custom) {
        var period = foldingPeriod();
-       var x, y, err, cu;
 
-       if (period === null) {
-         x = lc.times; y = lc.mags; err = lc.magerrs; cu = custom;
-       } else {
-         var epoch = foldingEpoch();
-         var cycles = $('#twoCycles').is(':checked') ? 2 : 1;
+       if (period === null)
+         return {x: times, y: y, err: err, custom: custom};
 
-         x = []; y = []; err = []; cu = [];
+       var epoch = foldingEpoch();
+       var cycles = $('#twoCycles').is(':checked') ? 2 : 1;
+       var out = {x: [], y: [], err: [], custom: []};
 
-         for (var c = 0; c < cycles; c++) {
-           for (var i = 0; i < lc.mjds.length; i++) {
-             var phase = ((lc.mjds[i] - epoch)/period) % 1;
-             if (phase < 0)
-               phase += 1;
+       for (var c = 0; c < cycles; c++) {
+         for (var i = 0; i < mjds.length; i++) {
+           var phase = ((mjds[i] - epoch)/period) % 1;
+           if (phase < 0)
+             phase += 1;
 
-             x.push(phase + c);
-             y.push(lc.mags[i]);
-             err.push(lc.magerrs[i]);
-             cu.push(custom[i]);
-           }
+           out.x.push(phase + c);
+           out.y.push(y[i]);
+           out.err.push(err[i]);
+           out.custom.push(custom[i]);
          }
        }
 
+       return out;
+     }
+
+     /* The marker and the error bar of a point, shared by the two panels so that
+        a color looks like the measurements it is made of */
+     function pointStyle(color, err, scatter_type) {
        return {
-         x: x,
-         y: y,
-         customdata: cu,
          opacity: 0.6,
-         marker: {size: 5, color: lc.color},
+         marker: {size: 5, color: color},
          error_y: {
            array: err,
            type: 'data',
@@ -694,13 +715,46 @@
            thickness:1,
            width: 0,
            opacity:0.3,
-           color: lc.color
+           color: color
          },
          mode: 'markers',
          type: scatter_type,
+       };
+     }
+
+     /* One light curve as a Plotly trace */
+     function lcTrace(lc, custom, scatter_type) {
+       var pts = foldedPoints(lc.mjds, lc.times, lc.mags, lc.magerrs, custom);
+
+       return Object.assign(pointStyle(lc.color, pts.err, scatter_type), {
+         x: pts.x,
+         y: pts.y,
+         customdata: pts.custom,
          name: lc.filter,
          hovertemplate: '%{x}:<br>%{data.name} mag = %{y:.2f} &plusmn; %{error_y.array:.3f}<br>%{customdata}<extra></extra>'
-       };
+       });
+     }
+
+     /* One color as a Plotly trace, drawn in the panel of its own below the light
+        curve. It shares the horizontal axis with it, so folding needs no special
+        handling here: a color sits at the mean time of the two measurements it is
+        made of, and is folded by that like any other point. */
+     function colorTrace(color, scatter_type) {
+       var custom = [];
+
+       for (var i = 0; i < color.mjds.length; i++)
+         custom.push(colorLabel(color, i));
+
+       var pts = foldedPoints(color.mjds, color.times, color.values, color.errors, custom);
+
+       return Object.assign(pointStyle(color.color, pts.err, scatter_type), {
+         x: pts.x,
+         y: pts.y,
+         customdata: pts.custom,
+         yaxis: 'y2',
+         name: color.name,
+         hovertemplate: '%{x}:<br>%{data.name} = %{y:.2f} &plusmn; %{error_y.array:.3f}<br>%{customdata}<extra></extra>'
+       });
      }
 
      /* Below that many points the light curve is drawn as SVG. In a WebGL trace
@@ -717,6 +771,11 @@
        for (var i = 0; i < window.lcs.length; i++)
          npoints += window.lcs[i].times.length;
 
+       /* The colors share the figure, and so its budget */
+       if (hasColors())
+         for (var i = 0; i < window.colors.length; i++)
+           npoints += window.colors[i].mjds.length;
+
        var scatter_type = (npoints > GL_MIN_POINTS && webgl_support()) ? 'scattergl' : 'scatter';
 
        for (var i = 0; i < window.lcs.length; i++) {
@@ -729,8 +788,29 @@
          traces.push(lcTrace(lc, custom, scatter_type));
        }
 
+       /* After the bands, so that the trace numbers of the light curve itself -
+          and thus the ones the click handler turns into frames - stay put */
+       if (hasColors())
+         for (var i = 0; i < window.colors.length; i++)
+           traces.push(colorTrace(window.colors[i], scatter_type));
+
        return traces;
      }
+
+     /* Whether there is a color panel to draw at all: the colors are computed
+        only when the search asks for them, and a curve of a single band yields
+        none even then */
+     function hasColors() {
+       return !!(window.colors && window.colors.length);
+     }
+
+     /* Of the plot, the share taken by the color panel and the gap left above it
+        for the magnitude axis to end in */
+     var COLOR_PANEL = 0.26, COLOR_GAP = 0.08;
+
+     /* Taller than the default, so that squeezing the second panel in does not
+        come out of the light curve itself */
+     var COLOR_PLOT_HEIGHT = 620;
 
      /* The horizontal axis is the one thing folding changes about the layout */
      function lcLayout() {
@@ -740,6 +820,21 @@
        layout.xaxis = period === null
          ? {title: {text: 'Time, UT'}, automargin: true, showline: true, zeroline: false}
          : {title: {text: 'Phase of the ' + period + ' d period'}, automargin: true, showline: true, zeroline: false};
+
+       /* Two panels stacked on one and the same horizontal axis, which is what
+          keeps them in step: there is nothing to synchronize, as zooming, panning
+          and folding all act on the single axis both of them are drawn against. */
+       if (hasColors()) {
+         layout.height = COLOR_PLOT_HEIGHT;
+         layout.yaxis = Object.assign({}, layout_lc.yaxis, {domain: [COLOR_PANEL + COLOR_GAP, 1]});
+         layout.yaxis2 = {
+           title: {text: 'Color'},
+           domain: [0, COLOR_PANEL],
+           automargin: true, showline: true, zeroline: false
+         };
+         /* Drawn under the lower panel rather than under the upper one */
+         layout.xaxis.anchor = 'y2';
+       }
 
        return layout;
      }
@@ -848,6 +943,18 @@
         by a factor of about 1.25. The <i>clipped mean</i> is the compromise, dropping the measurements deviating
         from the median of their group before taking the weighted mean of the rest. Averaging also smears out
         variability faster than the window, so switch it off when looking for short periods.
+      </p>
+      <p>
+        <i>Compute colors</i> adds a second panel below the light curve, sharing its horizontal axis, with the
+        <i>B-V</i>, <i>V-R</i>, <i>V-I</i> and <i>R-I</i> colors of the star. A color is the difference of two
+        magnitudes measured on different frames, so the two have to be taken close enough in time for the star
+        not to have changed between them: they are required to belong to the same night of the same camera, and
+        then to be each other's nearest measurement no more than half a day apart. Matching is one to one, so
+        three exposures in B against one in V make a single color rather than three sharing that V. The camera
+        is part of the condition because the zero points of two of them need not agree closely enough for their
+        difference to be a color of the star rather than one of the instruments. Colors follow the points they
+        are made of, so the quality cuts, the clipping and the averaging all reach them, and the hover says how
+        far apart the two measurements actually were.
       </p>
       <p>
         The result view groups points by filter in an interactive light-curve plot with error bars and hover
