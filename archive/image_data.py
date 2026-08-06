@@ -85,12 +85,14 @@ def find_calibration_image(image, type='masterdark'):
     if type in ['masterflat']:
         calibs = calibs.filter(filter=image.filter)
 
-    calibs1 = calibs.filter(night__lte=image.night).order_by('-night')
-    if calibs1.first():
-        return calibs1.first()
+    # The closest calibration taken before the image, and failing that the
+    # closest one after it. Held on to rather than asked for twice: `first()`
+    # slices a clone of the queryset, so every call is a round trip of its own.
+    calib = calibs.filter(night__lte=image.night).order_by('-night').first()
+    if calib is not None:
+        return calib
 
-    calibs1 = calibs.filter(night__gte=image.night).order_by('night')
-    return calibs1.first()
+    return calibs.filter(night__gte=image.night).order_by('night').first()
 
 
 @lru_cache(maxsize=FITS_CACHE_SIZE)
