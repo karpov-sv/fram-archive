@@ -73,7 +73,7 @@ def position_previews(ra, dec):
 
     return [
         {
-            'name': 'FRAM',
+            'name': 'FRAM-CTA',
             'url': hips2fits_url(HIPS_BASE_URL + 'color/', ra, dec),
             'link': reverse('sky_view') + '?' + urlencode({
                 'ra': ra, 'dec': dec, 'fov': PREVIEW_LINK_FOV,
@@ -191,10 +191,10 @@ def search(request, mode='images'):
     context['form'] = form
 
     if request.method == "POST":
+        params = {}
+
         if form.is_valid():
             is_correct = True
-
-            params = {}
 
             for _ in ['site', 'type', 'ccd', 'filter', 'night1', 'night2', 'serial', 'target', 'maxdist', 'filename', 'coords', 'magerr', 'nstars', 'nofiltering', 'sigma',
                       'average', 'average_window', 'average_mode']:
@@ -228,15 +228,14 @@ def search(request, mode='images'):
 
                 elif mode == 'cutouts':
                     # Restrict the radius
-                    if sr > 1:
-                        params['sr'] = 1
+                    params['sr'] = min(params['sr'], 1)
 
                     return redirect_get('images_cutouts',  get=params)
 
                 elif mode == 'photometry':
-                    # Restrict the radius
-                    if sr > 5/60:
-                        params['sr'] = 5/60
+                    # Restrict the radius, if it is set at all
+                    if 'sr' in params:
+                        params['sr'] = min(params['sr'], 5/60)
 
                     context['lc'] = reverse('photometry_lc') + '?' + urlencode(params)
                     context['lc_json'] = reverse('photometry_json') + '?' + urlencode(params)

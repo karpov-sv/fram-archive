@@ -167,9 +167,13 @@ class ImagesSearchForm(forms.Form):
         if types is not None:
             self.fields['type'].choices += [(_['type'],_['type']) for _ in types]
 
+        # Both cutouts and photometry are extracted around a given position, and
+        # so are meaningless without one, unlike the generic image search
         if mode == 'cutouts':
+            self.fields['coords'].required = True
             self.fields['sr_value'].initial = 10
             self.fields['sr_units'].initial = 'arcmin'
         elif mode == 'photometry':
+            self.fields['coords'].required = True
             self.fields['sr_value'].initial = 3
             self.fields['sr_units'].initial = 'arcsec'
