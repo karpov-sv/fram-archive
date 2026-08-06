@@ -817,48 +817,60 @@
 
   {% if not lc %}
     <div class="form-text text-muted">
-      Extract photometric measurements around the specified sky point. The center field accepts sky coordinates
-      or a resolvable object name, and the radius selects matching measurements around that position. Photometry
-      searches default to 3 arcsec when no radius is provided, and submitted radii are limited to 5 arcmin.<br>
-      Use the site, CCD, camera serial, filter, target ID, and night range fields to narrow the source images.
-      Night values use <code>YYYYMMDD</code>. Leave quality cuts enabled for the cleaned light curve, or select
-      <i>Disable quality cuts</i> to include all matching measurements.<br>
-      <i>Clip</i> additionally rejects the measurements deviating from the median magnitude by more than the
-      given number of median absolute deviations, taken separately for every camera and filter, as their zero
-      points need not agree closely enough for a common median to mean anything. It is empty, and so disabled,
-      on purpose: unlike the quality cuts, which reject what is known to be bad, this one rejects whatever
-      deviates, and so removes the deep minima of a genuine variable together with the outliers. Useful for
-      cleaning up a star expected to be constant, and best avoided otherwise.<br>
-      <i>Average close points</i> combines the measurements of a single visit into one, which suits the target
-      scripts that take several images in a row before moving on. Grouping is per site, camera and filter, so
-      no average mixes zero points that need not agree, and <i>within</i> sets the largest gap still counted as
-      the same visit; a group is never allowed to span more than three such intervals, so a long continuous
-      sequence is binned rather than collapsed into a single point. The <i>weighted mean</i> is the most
-      precise of the three combinations, shrinking the uncertainty roughly as the square root of the number of
-      measurements, but also the most vulnerable to a spoiled one: a cosmic ray makes a measurement brighter,
-      a brighter measurement is assigned a smaller error, a smaller error means a larger weight, and the
-      average follows it. The <i>median</i> is immune to that at the price of a somewhat larger uncertainty,
-      by a factor of about 1.25. The <i>clipped mean</i> is the compromise, dropping the measurements deviating
-      from the median of their group before taking the weighted mean of the rest. Averaging also smears out
-      variability faster than the window, so switch it off when looking for short periods.<br>
-      The result view groups points by filter in an interactive light-curve plot with error bars and hover
-      details. It also provides full and filtered text downloads, plus quick links to SIMBAD, AAVSO VSX, NSVS,
-      ASAS-SN, and Aladin for the query position.<br>
-      <i>Search period</i> computes a Lomb-Scargle periodogram of the very points displayed, down to the
-      shortest period given beside it. Bands are pooled after centering each on its own median, as they sit
-      whole magnitudes apart while the variability being looked for is far smaller. Clicking a peak folds the
-      curve at that period; the dotted red lines mark the periods the observations themselves imprint on any
-      periodogram &mdash; the day with its harmonics, the sidereal day and the year &mdash; and a peak sitting
-      on one of those comes from the sampling rather than from the star. The solid green line is the period
-      the curve is folded with, and the dashed green ones are the periods it would also appear at through the
-      nightly sampling, at <code>1/(1/P &plusmn; n)</code> per day: a real 0.8724 d signal necessarily produces
-      peaks at 0.4659 and 6.8393 d as well, so a peak falling on a dashed line is that same period over again
-      rather than a second one. The marks follow the <i>Period</i> field, so they move as soon as it is edited,
-      and they are drawn whether or not the curve is actually folded. Each set of lines is named in the legend,
-      and clicking its entry there hides it. The reported false alarm probability assumes pure noise and
-      nothing else, so it is optimistic. <i>Fold</i>, <i>Period</i> and <i>Epoch</i> are
-      applied in the browser, so editing them redraws immediately, and <i>&divide;2</i> / <i>&times;2</i> help
-      with an eclipsing binary, whose periodogram peaks at half the true period.
+      <p>
+        Extract photometric measurements around the specified sky point. The center field accepts sky coordinates
+        or a resolvable object name, and the radius selects matching measurements around that position. Photometry
+        searches default to 3 arcsec when no radius is provided, and submitted radii are limited to 5 arcmin.
+      </p>
+      <p>
+        Use the site, CCD, camera serial, filter, target ID, and night range fields to narrow the source images.
+        Night values use <code>YYYYMMDD</code>. Leave quality cuts enabled for the cleaned light curve, or select
+        <i>Disable quality cuts</i> to include all matching measurements.
+      </p>
+      <p>
+        <i>Clip</i> additionally rejects the measurements deviating from the median magnitude by more than the
+        given number of median absolute deviations, taken separately for every camera and filter, as their zero
+        points need not agree closely enough for a common median to mean anything. It is empty, and so disabled,
+        on purpose: unlike the quality cuts, which reject what is known to be bad, this one rejects whatever
+        deviates, and so removes the deep minima of a genuine variable together with the outliers. Useful for
+        cleaning up a star expected to be constant, and best avoided otherwise.
+      </p>
+      <p>
+        <i>Average close points</i> combines the measurements of a single visit into one, which suits the target
+        scripts that take several images in a row before moving on. Grouping is per site, camera and filter, so
+        no average mixes zero points that need not agree, and <i>within</i> sets the largest gap still counted as
+        the same visit; a group is never allowed to span more than three such intervals, so a long continuous
+        sequence is binned rather than collapsed into a single point. The <i>weighted mean</i> is the most
+        precise of the three combinations, shrinking the uncertainty roughly as the square root of the number of
+        measurements, but also the most vulnerable to a spoiled one: a cosmic ray makes a measurement brighter,
+        a brighter measurement is assigned a smaller error, a smaller error means a larger weight, and the
+        average follows it. The <i>median</i> is immune to that at the price of a somewhat larger uncertainty,
+        by a factor of about 1.25. The <i>clipped mean</i> is the compromise, dropping the measurements deviating
+        from the median of their group before taking the weighted mean of the rest. Averaging also smears out
+        variability faster than the window, so switch it off when looking for short periods.
+      </p>
+      <p>
+        The result view groups points by filter in an interactive light-curve plot with error bars and hover
+        details. It also provides full and filtered text downloads, plus quick links to SIMBAD, AAVSO VSX, NSVS,
+        ASAS-SN, and Aladin for the query position.
+      </p>
+      <p>
+        <i>Search period</i> computes a Lomb-Scargle periodogram of the very points displayed, down to the
+        shortest period given beside it. Bands are pooled after centering each on its own median, as they sit
+        whole magnitudes apart while the variability being looked for is far smaller. Clicking a peak folds the
+        curve at that period; the dotted red lines mark the periods the observations themselves imprint on any
+        periodogram &mdash; the day with its harmonics, the sidereal day and the year &mdash; and a peak sitting
+        on one of those comes from the sampling rather than from the star. The solid green line is the period
+        the curve is folded with, and the dashed green ones are the periods it would also appear at through the
+        nightly sampling, at <code>1/(1/P &plusmn; n)</code> per day: a real 0.8724 d signal necessarily produces
+        peaks at 0.4659 and 6.8393 d as well, so a peak falling on a dashed line is that same period over again
+        rather than a second one. The marks follow the <i>Period</i> field, so they move as soon as it is edited,
+        and they are drawn whether or not the curve is actually folded. Each set of lines is named in the legend,
+        and clicking its entry there hides it. The reported false alarm probability assumes pure noise and
+        nothing else, so it is optimistic. <i>Fold</i>, <i>Period</i> and <i>Epoch</i> are
+        applied in the browser, so editing them redraws immediately, and <i>&divide;2</i> / <i>&times;2</i> help
+        with an eclipsing binary, whose periodogram peaks at half the true period.
+      </p>
     </div>
   {% endif %}
 
