@@ -8,7 +8,7 @@ from django.conf import settings
 
 from django.db.models import Count
 
-import os, sys, io
+import os, sys, io, types
 from urllib.parse import urlencode
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -110,6 +110,40 @@ def get_images(request):
     return images
 
 
+def cache_count(images):
+    """A queryset that asks the database for its size no more than once.
+
+    An image list wants the size of one and the same selection several times
+    over - the view to see whether it holds a single image, the caption to say
+    how many there are, and the paginator to lay the pages out - and each of
+    those is a COUNT of the whole selection of its own. On a spatial query that
+    count is by far the most expensive thing on the page: half a degree around
+    M31 takes five seconds to count and thirty milliseconds to fetch a page of.
+
+    Patched on the instance rather than on the class, so that the slices the
+    paginator takes of it - which are clones, and count something else entirely
+    - keep the ordinary behaviour.
+    """
+    count = images.count
+
+    def cached_count(self):
+        if cached_count.value is None:
+            cached_count.value = count()
+
+        return cached_count.value
+
+    cached_count.value = None
+
+    # Bound as a method, and taking `self` for that reason: Paginator satisfies
+    # itself that what it found is a method of no arguments before calling it,
+    # and falls back to len() - which fetches every row of the selection - for
+    # anything that is not. A plain function stored on the instance is exactly
+    # the sort of thing it refuses.
+    images.count = types.MethodType(cached_count, images)
+
+    return images
+
+
 @permission_required('auth.can_view_images', raise_exception=True)
 def images_list(request):
     context = {}
@@ -152,6 +186,7 @@ def images_list(request):
     else:
         images = images.order_by('-time')
 
+    images = cache_count(images)
     context['images'] = images
 
     if images.count() == 1:
@@ -199,7 +234,7 @@ def images_cutouts(request):
     else:
         images = images.order_by('-time')
 
-    context['images'] = images
+    context['images'] = cache_count(images)
 
     context['cutouts'] = True
 
