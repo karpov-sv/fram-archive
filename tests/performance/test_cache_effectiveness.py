@@ -12,7 +12,7 @@ from django.core.cache import cache
 from archive.views_images import find_calibration_image
 from archive.views_photometry import get_lc
 from archive.utils import db_query
-from tests.conftest import assert_query_count, measure_time
+from tests.conftest import assert_query_count, measure_time, photometry_params
 
 
 @pytest.mark.cache
@@ -117,78 +117,44 @@ class TestPhotometryQueryOptimization:
     """Test photometry N+1 query fix"""
 
     def test_photometry_uses_single_query(self, client, test_coordinates):
-        """Photometry should use single .values_list() query"""
-        # Create mock request
-        from django.test import RequestFactory
-        factory = RequestFactory()
+        """Photometry should fetch the whole cone in one query"""
+        # The cache is what get_lc consults first, so a cold one is the only
+        # state in which the query it would make can be counted at all
+        cache.clear()
 
-        request = factory.get('/photometry/json', {
-            'ra': test_coordinates['ra'],
-            'dec': test_coordinates['dec'],
-            'sr': test_coordinates['sr']
-        })
-
-        # Should use exactly 1 query for data fetching
-        # (plus potentially 1 for the initial filter)
         with assert_query_count(1, tolerance=1):
-            lc = get_lc(request)
-            # Force evaluation
-            data = list(lc.values_list(
-                'time', 'image__site', 'image__ccd', 'filter', 'ra', 'dec',
-                'mag', 'magerr', 'flags', 'fwhm', 'std', 'nstars'
-            ))
+            lc = get_lc(photometry_params(test_coordinates))
+
+        assert isinstance(lc, list)
 
     def test_photometry_no_iteration_queries(self, client, test_coordinates):
-        """Photometry should not iterate queryset multiple times"""
-        from django.test import RequestFactory
-        factory = RequestFactory()
+        """Reading the measurements should cost nothing beyond that query"""
+        cache.clear()
 
-        request = factory.get('/photometry/json', {
-            'ra': test_coordinates['ra'],
-            'dec': test_coordinates['dec'],
-            'sr': test_coordinates['sr']
-        })
+        lc = get_lc(photometry_params(test_coordinates))
 
-        # Get the queryset
-        lc = get_lc(request)
-
-        # Count queries when fetching data
-        with assert_query_count(1, tolerance=1):
-            # This is how views_photometry.py now fetches data
-            data = list(lc.values_list(
-                'time', 'image__site', 'image__ccd', 'filter', 'ra', 'dec',
-                'mag', 'magerr', 'flags', 'fwhm', 'std', 'nstars'
-            ))
-
-            # Should be single query, not 10+ separate iterations
-            assert len(data) >= 0  # Just verify it works
+        # The rows arrive already materialized, so walking them - which the
+        # light curve does column by column - goes nowhere near the database
+        with assert_query_count(0):
+            for column in ['time', 'mag', 'magerr', 'filter', 'site', 'ccd']:
+                values = [row[column] for row in lc]
+                assert len(values) == len(lc)
 
     def test_photometry_query_performance(self, client, test_coordinates):
         """Photometry query should complete in <100ms for typical dataset"""
-        from django.test import RequestFactory
-        factory = RequestFactory()
-
-        request = factory.get('/photometry/json', {
-            'ra': test_coordinates['ra'],
-            'dec': test_coordinates['dec'],
-            'sr': test_coordinates['sr']
-        })
+        cache.clear()
 
         start = time.perf_counter()
-        lc = get_lc(request)
-        data = list(lc.values_list(
-            'time', 'image__site', 'image__ccd', 'filter', 'ra', 'dec',
-            'mag', 'magerr', 'flags', 'fwhm', 'std', 'nstars'
-        ))
+        lc = get_lc(photometry_params(test_coordinates))
         elapsed = time.perf_counter() - start
 
-        print(f"\nPhotometry query for {len(data)} records: {elapsed*1000:.1f}ms")
+        print(f"\nPhotometry query for {len(lc)} records: {elapsed*1000:.1f}ms")
 
         # Should be fast for typical datasets
         # Allow more time if large dataset
-        if len(data) <= 100:
+        if len(lc) <= 100:
             assert elapsed < 0.1, \
-                f"Query took {elapsed*1000:.1f}ms for {len(data)} records"
+                f"Query took {elapsed*1000:.1f}ms for {len(lc)} records"
 
 
 @pytest.mark.cache

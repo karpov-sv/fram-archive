@@ -290,13 +290,23 @@ class TestExpensiveEndpoints:
         from django.core.cache import cache
         cache.clear()
 
-        start = time.perf_counter()
-        response = client.get(f'/images/{test_image_id}/cutout', {
-            'ra': test_coordinates['ra'],
-            'dec': test_coordinates['dec'],
-            'sr': 0.1
-        })
-        elapsed = time.perf_counter() - start
+        # The test image need not cover the test coordinates, and asking for a
+        # cutout of a position that is not on the frame fails inside the WCS
+        # inversion. That is the 500 allowed for below, so the exception has to
+        # be turned into one rather than re-raised out of the client.
+        raising = client.raise_request_exception
+        client.raise_request_exception = False
+
+        try:
+            start = time.perf_counter()
+            response = client.get(f'/images/{test_image_id}/cutout', {
+                'ra': test_coordinates['ra'],
+                'dec': test_coordinates['dec'],
+                'sr': 0.1
+            })
+            elapsed = time.perf_counter() - start
+        finally:
+            client.raise_request_exception = raising
 
         print(f"\nCutout generation: {elapsed:.3f}s")
 

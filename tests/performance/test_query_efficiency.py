@@ -13,7 +13,7 @@ from django.core.cache import cache
 from archive.views_images import find_calibration_image, get_images
 from archive.views_photometry import get_lc
 from archive.utils import db_query
-from tests.conftest import assert_query_count
+from tests.conftest import assert_query_count, photometry_params
 
 
 @pytest.mark.query
@@ -23,11 +23,16 @@ class TestImageListQueries:
     """Test query efficiency for image listing"""
 
     def test_image_list_query_count(self, client):
-        """Image list should use ≤5 queries"""
+        """Image list should use ≤5 queries
+
+        Counted on the observational database alone: the session and the user
+        of the authenticated test client live in the default one, and are an
+        artifact of how the page is reached rather than of what it does.
+        """
         # Clear cache to ensure we're testing query count
         cache.clear()
 
-        with assert_query_count(5, tolerance=3):
+        with assert_query_count(5, tolerance=3, database='fram'):
             response = client.get('/images/', {
                 'site': 'S104',
                 'filter': 'V'
@@ -39,7 +44,7 @@ class TestImageListQueries:
         """Image list with multiple filters should not increase query count"""
         cache.clear()
 
-        with assert_query_count(5, tolerance=3):
+        with assert_query_count(5, tolerance=3, database='fram'):
             response = client.get('/images/', {
                 'site': 'S104',
                 'filter': 'V',
@@ -116,48 +121,29 @@ class TestPhotometryQueries:
 
     def test_photometry_single_query(self, client, test_coordinates):
         """Photometry should use single query for data"""
-        from django.test import RequestFactory
-        factory = RequestFactory()
+        # get_lc consults the cache before the database, so only a cold one
+        # leaves a query to be counted
+        cache.clear()
 
-        request = factory.get('/photometry/json', {
-            'ra': test_coordinates['ra'],
-            'dec': test_coordinates['dec'],
-            'sr': test_coordinates['sr']
-        })
-
-        # get_lc builds query but doesn't execute
-        lc = get_lc(request)
-
-        # Single query when fetching data with values_list
         with assert_query_count(1, tolerance=1):
-            data = list(lc.values_list(
-                'time', 'image__site', 'image__ccd', 'filter', 'ra', 'dec',
-                'mag', 'magerr', 'flags', 'fwhm', 'std', 'nstars'
-            ))
+            lc = get_lc(photometry_params(test_coordinates))
+
+        assert isinstance(lc, list)
 
     def test_photometry_no_iteration_n_plus_one(self, client, test_coordinates):
         """Photometry should not have N+1 query pattern"""
-        from django.test import RequestFactory
-        factory = RequestFactory()
+        cache.clear()
 
-        request = factory.get('/photometry/json', {
-            'ra': test_coordinates['ra'],
-            'dec': test_coordinates['dec'],
-            'sr': test_coordinates['sr']
-        })
+        lc = get_lc(photometry_params(test_coordinates))
 
-        lc = get_lc(request)
+        # The single query brings back every column of every measurement, so
+        # the light curve is built without going back for any of them
+        with assert_query_count(0):
+            columns = ['time', 'site', 'ccd', 'filter', 'ra', 'dec',
+                       'mag', 'magerr', 'flags', 'fwhm', 'std', 'nstars']
+            data = [[row[_] for _ in columns] for row in lc]
 
-        # This is the NEW optimized way (single query)
-        with assert_query_count(1, tolerance=1):
-            data = list(lc.values_list(
-                'time', 'image__site', 'image__ccd', 'filter', 'ra', 'dec',
-                'mag', 'magerr', 'flags', 'fwhm', 'std', 'nstars'
-            ))
-
-        # OLD way would have been:
-        # for record in lc:  # Query 1
-        #     times.append(record.time)  # No query
+        assert len(data) == len(lc)
         #     sites.append(record.site)  # No query
         #     ...
         # This evaluates the queryset once, but loads full ORM objects
@@ -221,16 +207,18 @@ class TestImageDetailsQueries:
     """Test image details page query patterns"""
 
     def test_image_details_query_count(self, client, test_image_id):
-        """Image details should use ≤3 queries"""
+        """Image details should use one query per calibration looked up"""
         if test_image_id is None:
             pytest.skip("No test image available")
 
         cache.clear()
 
-        # Image details queries:
+        # Image details queries, on a cold cache:
         # 1. Get image
-        # 2-3. Calibration lookups (dark/flat)
-        with assert_query_count(3, tolerance=2):
+        # 2-9. The dark, bias, dark current and flat, each of them one query
+        #      for the closest calibration taken before the image, and a second
+        #      one only where there is none and the search turns forward
+        with assert_query_count(7, tolerance=2, database='fram'):
             response = client.get(f'/images/{test_image_id}/')
 
         assert response.status_code == 200
@@ -246,7 +234,7 @@ class TestImageDetailsQueries:
         response1 = client.get(f'/images/{test_image_id}/')
 
         # Second request - calibrations should be cached
-        with assert_query_count(1, tolerance=1):
+        with assert_query_count(1, tolerance=1, database='fram'):
             # Should only query for the image itself
             response2 = client.get(f'/images/{test_image_id}/')
 
@@ -262,26 +250,22 @@ class TestNoNPlusOnePatterns:
 
     def test_no_n_plus_one_in_photometry(self, test_coordinates):
         """Photometry should not have N+1 pattern"""
-        from django.test import RequestFactory
-        factory = RequestFactory()
+        # A tenth of the radius is a hundredth of the area, and so of the
+        # measurements. The query count must not notice.
+        small = photometry_params(test_coordinates, sr=0.1*test_coordinates['sr'])
+        large = photometry_params(test_coordinates)
 
-        request = factory.get('/photometry/json', {
-            'ra': test_coordinates['ra'],
-            'dec': test_coordinates['dec'],
-            'sr': test_coordinates['sr']
-        })
+        cache.clear()
+        with assert_query_count(1, tolerance=1):
+            few = get_lc(small)
 
-        lc = get_lc(request)
+        cache.clear()
+        with assert_query_count(1, tolerance=1):
+            many = get_lc(large)
 
-        # Fetch 10 records
-        with assert_query_count(1):
-            data = list(lc.values_list('time', 'mag')[:10])
-
-        # Fetch 100 records - should still be 1 query
-        with assert_query_count(1):
-            data = list(lc.values_list('time', 'mag')[:100])
-
-        # Query count should NOT scale with result count
+        # Worth knowing that the two really did differ in size, or the test
+        # above would hold for a reason it is not meant to be testing
+        assert len(many) > len(few)
 
     def test_calibration_cache_prevents_repeated_lookups(self, test_image):
         """Multiple calibration lookups should use cache"""
@@ -331,12 +315,15 @@ class TestQueryOptimizations:
         """Adding filters should not increase query count"""
         cache.clear()
 
-        # Simple query
-        with assert_query_count(5, tolerance=3) as ctx1:
+        # The band is wide because the page costs anything from one query to
+        # six: the lists of sites, cameras and filters are memoized, and so are
+        # paid for by whichever request comes first, and a selection that turns
+        # out to be empty is never fetched a page of
+        with assert_query_count(3, tolerance=3, database='fram') as simple:
             client.get('/images/', {'site': 'S104'})
 
         # Complex query with many filters
-        with assert_query_count(5, tolerance=3) as ctx2:
+        with assert_query_count(3, tolerance=3, database='fram') as filtered:
             client.get('/images/', {
                 'site': 'S104',
                 'filter': 'V',
@@ -346,4 +333,8 @@ class TestQueryOptimizations:
                 'night2': '20201231'
             })
 
-        # Query count should be similar (within tolerance)
+        # The point of it: a narrower selection is described within the queries
+        # the page already makes, so asking for one cannot add any
+        assert filtered['count'] <= simple['count'], \
+            f"{filtered['count']} queries with filters against " \
+            f"{simple['count']} without: {filtered['queries']}"

@@ -114,6 +114,10 @@ def assert_query_count(expected_count, tolerance=0, database='all'):
         tolerance: Allowed deviation from expected count
         database: Which database to track ('default', 'fram', or 'all')
 
+    Yields a record which, once the block is over, holds the queries that were
+    made and how many of them there were, for a test that has something to say
+    about them beyond their number.
+
     Usage:
         with assert_query_count(2, tolerance=1):
             # Code that should make 1-3 queries
@@ -139,7 +143,9 @@ def assert_query_count(expected_count, tolerance=0, database='all'):
                 conn.queries_log.clear()
             queries_before[db_name] = len(conn.queries)
 
-    yield
+    record = {'count': None, 'queries': []}
+
+    yield record
 
     # Count queries after execution
     queries_after = {}
@@ -155,6 +161,9 @@ def assert_query_count(expected_count, tolerance=0, database='all'):
 
     actual_count = sum(queries_after.get(db, 0) - queries_before.get(db, 0)
                        for db in dbs_to_track if db in queries_before)
+
+    record['count'] = actual_count
+    record['queries'] = all_queries
 
     assert abs(actual_count - expected_count) <= tolerance, \
         f"Expected {expected_count}±{tolerance} queries, got {actual_count}. " \
@@ -229,6 +238,23 @@ def test_coordinates():
         'sr': 0.01,    # 0.01 degrees search radius
         'name': 'M31'
     }
+
+
+def photometry_params(coordinates, **extra):
+    """
+    Query parameters of a photometry cone search
+
+    get_lc() takes any mapping of them - request.GET in a view, a plain dict
+    here - and this is the smallest one that describes a search.
+    """
+    params = {
+        'ra': coordinates['ra'],
+        'dec': coordinates['dec'],
+        'sr': coordinates['sr'],
+    }
+    params.update(extra)
+
+    return params
 
 
 @pytest.fixture
