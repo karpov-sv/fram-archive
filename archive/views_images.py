@@ -1135,7 +1135,9 @@ def image_cutout(request, id=0, size=0, mode='view'):
     ra,dec,sr = float(request.GET.get('ra')), float(request.GET.get('dec')), float(request.GET.get('sr'))
 
     wcs = WCS(header)
-    x0,y0 = wcs.all_world2pix(ra, dec, sr)
+    # The third argument is the origin of the pixel coordinates, 0 for the
+    # convention numpy indexes them by, and not the radius of anything
+    x0,y0 = wcs.all_world2pix(ra, dec, 0)
     r0 = sr/np.hypot(wcs.pixel_scale_matrix[0,0], wcs.pixel_scale_matrix[0,1])
 
     # crop,cropheader = utils.crop_image(data, x0, y0, r0, header)
