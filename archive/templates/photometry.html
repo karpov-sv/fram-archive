@@ -703,10 +703,21 @@
        };
      }
 
+     /* Below that many points the light curve is drawn as SVG. In a WebGL trace
+        the markers and the error bars are drawn by two different renderers, and
+        so they may end up a pixel apart, which is quite visible on a sparse
+        curve. WebGL is only worth that on curves too large for SVG to handle. */
+     var GL_MIN_POINTS = 5000;
+
      /* Traces for every band, as they are currently to be drawn */
      function lcTraces() {
        var traces = [];
-       var scatter_type = webgl_support() ? 'scattergl' : 'scatter';
+       var npoints = 0;
+
+       for (var i = 0; i < window.lcs.length; i++)
+         npoints += window.lcs[i].times.length;
+
+       var scatter_type = (npoints > GL_MIN_POINTS && webgl_support()) ? 'scattergl' : 'scatter';
 
        for (var i = 0; i < window.lcs.length; i++) {
          var lc = window.lcs[i];
