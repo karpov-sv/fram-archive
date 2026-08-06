@@ -3,7 +3,6 @@ from django.template.response import TemplateResponse
 from django.shortcuts import redirect
 from django.views.decorators.cache import cache_page
 from django.views.decorators.csrf import csrf_protect
-from django.db.models import Q
 
 from django.core.cache import cache
 
@@ -20,7 +19,8 @@ from astropy.stats import mad_std
 from astropy.timeseries import LombScargle
 from scipy.signal import find_peaks
 
-from .models import Photometry
+from .models import photometry_route_for
+from .utils import db_query
 
 
 def radectoxieta(ra, dec, ra0=0, dec0=0):
@@ -94,61 +94,84 @@ def clip_column(idx, values, side='upper', nsigma=3.0):
 
 
 def get_lc(params):
-    """Queryset of the measurements matching the search constraints.
+    """Fetch the measurements matching the search constraints as a list of
+    dicts keyed by column name.
 
-    `params` is any mapping of the query parameters, so both `request.GET` and a
-    plain dictionary of them will do.
+    `params` is any mapping of the query parameters, so both `request.GET` and
+    a plain dictionary of them will do.
+
+    When both `site` and `ccd` are pinned to concrete values, the FROM clause
+    targets the corresponding child of `photometry_all` directly. Cross-
+    partition cone searches otherwise pay a full round of index probes on
+    every child, which on cold cache is the dominant cost for 3–15" cones.
     """
-    lc = Photometry.objects.order_by('time')
+    site = params.get('site')
+    ccd = params.get('ccd')
+    route = photometry_route_for(site, ccd)
+
+    where = ['(i.night < %s OR i.night > %s)']
+    sql_params = ['20190216', '20190222']
 
     night = params.get('night')
     if night and night != 'all':
-        lc = lc.filter(image__night=night)
+        where.append('i.night = %s')
+        sql_params.append(night)
 
     night1 = params.get('night1')
     if night1:
-        lc = lc.filter(image__night__gte=night1)
+        where.append('i.night >= %s')
+        sql_params.append(night1)
 
     night2 = params.get('night2')
     if night2:
-        lc = lc.filter(image__night__lte=night2)
+        where.append('i.night <= %s')
+        sql_params.append(night2)
 
-    # Filter out bad data
-    lc = lc.filter(Q(image__night__lt='20190216') | Q(image__night__gt='20190222'))
+    # Skip WHERE clauses on axes the routed table already narrows on. A
+    # specific partition narrows both site and ccd; a group view narrows only
+    # ccd (its member children span multiple sites).
+    if site and site != 'all' and not route.narrows_site:
+        where.append('i.site = %s')
+        sql_params.append(site)
 
-    site = params.get('site')
-    if site and site != 'all':
-        lc = lc.filter(image__site=site)
+    if ccd and ccd != 'all' and not route.narrows_ccd:
+        where.append('i.ccd = %s')
+        sql_params.append(ccd)
 
     fname = params.get('filter')
     if fname and fname != 'all':
-        lc = lc.filter(filter=fname)
-
-    ccd = params.get('ccd')
-    if ccd and ccd != 'all':
-        lc = lc.filter(image__ccd=ccd)
+        where.append('p.filter = %s')
+        sql_params.append(fname)
 
     magerr = params.get('magerr')
     if magerr:
-        magerr = float(magerr)
-        lc = lc.filter(magerr__lt=magerr)
+        where.append('p.magerr < %s')
+        sql_params.append(float(magerr))
 
     nstars = params.get('nstars')
     if nstars:
-        nstars = int(nstars)
-        lc = lc.filter(nstars__gte=nstars)
+        where.append('p.nstars >= %s')
+        sql_params.append(int(nstars))
 
     ra = float(params.get('ra'))
     dec = float(params.get('dec'))
     sr = float(params.get('sr', 0.01))
+    where.append('q3c_radial_query(p.ra, p.dec, %s, %s, %s)')
+    sql_params.extend((ra, dec, sr))
 
-    # Lc with centers within given search radius
-    lc = lc.extra(
-        where=['q3c_radial_query("photometry_all"."ra", "photometry_all"."dec", %s, %s, %s)'],
-        params=(ra, dec, sr),
+    # `p.*` pulls every Photometry column without us having to enumerate them;
+    # from `images` we only need the four extras that build_lc reads. The
+    # table name comes from `photometry_route_for`'s hardcoded whitelist, so
+    # the string interpolation is safe.
+    sql = (
+        'SELECT p.*, i.site, i.ccd, i.id AS image_id, i.night '
+        'FROM ' + route.table + ' AS p '
+        'INNER JOIN images AS i ON p.image = i.id '
+        'WHERE ' + ' AND '.join(where) +
+        ' ORDER BY p.time'
     )
 
-    return lc
+    return db_query(sql, sql_params, simplify=False) or []
 
 
 # Default largest gap between two measurements still counted as one visit, in
@@ -417,41 +440,34 @@ def build_lc(params):
     Returns the measurement columns together with `idx0`, the points passing the
     quality cuts - the very ones the plot draws and the period search runs on.
     """
-    lc = get_lc(params)
+    # get_lc returns a list of dicts, one per measurement, keyed by column
+    # name (photometry columns plus a few extras pulled from the joined
+    # images row).
+    data = get_lc(params)
 
-    # Fetch all data in a single query instead of iterating 10+ times
-    data = list(
-        lc.values_list(
-            'time', 'image__site', 'image__ccd', 'filter', 'ra', 'dec',
-            'mag', 'magerr', 'flags', 'fwhm', 'std', 'nstars',
-            'color_term', 'zp_std', 'final_frac',
-            # Identify the frame every measurement was made on, so that the plot
-            # may show the very pixels behind a point
-            'image__id', 'image__night',
-        )
-    )
+    def col(name, dtype=None):
+        return np.array([row[name] for row in data], dtype=dtype)
 
     if data:
-        times, sites, ccds, filters, ras, decs, mags, magerrs, flags, fwhms, stds, nstars, color_term, zp_std, final_frac, image_ids, nights = zip(*data)
-        times = np.array(times)
-        sites = np.array(sites)
-        ccds = np.array(ccds)
-        filters = np.array(filters)
-        ras = np.array(ras)
-        decs = np.array(decs)
-        mags = np.array(mags)
-        magerrs = np.array(magerrs)
-        flags = np.array(flags)
-        fwhms = np.array(fwhms)
-        stds = np.array(stds)
-        nstars = np.array(nstars)
-        color_term = np.array(color_term)
-        zp_std = np.array(zp_std)
-        final_frac = np.array(final_frac)
+        times = col('time')
+        sites = col('site')
+        ccds = col('ccd')
+        filters = col('filter')
+        ras = col('ra')
+        decs = col('dec')
+        mags = col('mag')
+        magerrs = col('magerr')
+        flags = col('flags')
+        fwhms = col('fwhm')
+        stds = col('std')
+        nstars = col('nstars')
+        color_term = col('color_term')
+        zp_std = col('zp_std')
+        final_frac = col('final_frac')
         # Object arrays, as either column may be NULL for a measurement whose
         # frame is gone from the archive
-        image_ids = np.array(image_ids, dtype=object)
-        nights = np.array(nights, dtype=object)
+        image_ids = col('image_id', dtype=object)
+        nights = col('night', dtype=object)
     else:
         times = sites = ccds = filters = ras = decs = mags = magerrs = flags = fwhms = stds = nstars = color_term = zp_std = final_frac = image_ids = nights = np.array([])
 

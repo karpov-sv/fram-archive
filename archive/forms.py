@@ -26,7 +26,15 @@ class ImagesSearchForm(forms.Form):
     )
 
     ccd = forms.ChoiceField(
-        choices=[('all', 'All')],# + (_,_ for _ in ccds)],
+        choices=(
+            [('all', 'All')]
+            # Meta-groups first — shortcuts users reach for most. Membership
+            # lives in the DB view, so we do not enumerate the covered ccds
+            # here (the same name could belong to more than one group later).
+            # Tokens are 'all_nf', 'all_wf', ..., in line with the plain 'all'.
+            + [(token, 'All ' + token[len('all_'):].upper())
+               for token in models.PHOTOMETRY_CCD_GROUPS]
+        ),
         required=False, label="CCD"
     )
 
