@@ -197,8 +197,19 @@ def search(request, mode='images'):
             is_correct = True
 
             for _ in ['site', 'type', 'ccd', 'filter', 'night1', 'night2', 'serial', 'target', 'maxdist', 'filename', 'coords', 'magerr', 'nstars', 'nofiltering', 'sigma',
-                      'average', 'average_window', 'average_mode', 'colors']:
-                if form.cleaned_data.get(_) and form.cleaned_data[_] != 'all':
+                      'average', 'average_window', 'average_mode', 'colors',
+                      'color_aware', 'bv']:
+                value = form.cleaned_data.get(_)
+
+                # A color of exactly zero is a color like any other, unlike every
+                # other numeric field here, where the empty value and the zero
+                # both mean the option is off
+                if _ == 'bv':
+                    keep = value is not None
+                else:
+                    keep = bool(value) and value != 'all'
+
+                if keep:
                     params[_] = request.POST.get(_)
 
             if form.cleaned_data.get('coords'):

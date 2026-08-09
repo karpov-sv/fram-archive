@@ -602,6 +602,13 @@
        $('#searchPeriod').on('click', searchPeriod);
        $('#foldCheck, #twoCycles').on('change', replotLightCurve);
        $('#periodInput, #epochInput').on('change', replotLightCurve);
+
+       /* Diagnostic view */
+       $('#diagnosticSelect, #centreCheck').on('change', function() {
+         updateDiagnosticControls();
+         replotLightCurve();
+       });
+       updateDiagnosticControls();
        $('#periodHalf').on('click', function() { scalePeriod(0.5); });
        $('#periodDouble').on('click', function() { scalePeriod(2); });
 
@@ -658,6 +665,113 @@
        return 'MJD = ' + color.mjds[ii].toFixed(2)
               + '<br>' + color.sites[ii] + ' ' + color.ccds[ii]
               + '<br>' + formatGap(color.dts[ii]) + ' apart';
+     }
+
+     /* What the magnitude may be plotted against instead of the time, to see
+        whether it follows something about the frame rather than the star. Every
+        one of them is already in the light curve the browser holds, so switching
+        between them costs no request. `values` returns one number per point, in
+        the order the measurements come in. */
+     var DIAGNOSTICS = {
+       color_term: {
+         label: 'Color term of the frame',
+         values: function(lc) { return lc.color_term; }
+       },
+       fwhm: {
+         label: 'FWHM, pixels',
+         values: function(lc) { return lc.fwhms; }
+       },
+       std: {
+         label: 'Scatter of the frame zero point',
+         values: function(lc) { return lc.stds; }
+       },
+       nstars: {
+         label: 'Calibration stars on the frame',
+         values: function(lc) { return lc.nstars; }
+       },
+       magerr: {
+         label: 'Uncertainty of the measurement',
+         values: function(lc) { return lc.magerrs; }
+       },
+       xi: {
+         label: 'Offset from the queried position in RA, arcsec',
+         values: function(lc) { return lc.xi; }
+       },
+       eta: {
+         label: 'Offset from the queried position in Dec, arcsec',
+         values: function(lc) { return lc.eta; }
+       }
+     };
+
+     /* The diagnostic currently selected, or null while the curve is drawn
+        against time as usual */
+     function diagnosticAxis() {
+       return DIAGNOSTICS[$('#diagnosticSelect').val()] || null;
+     }
+
+     function median(values) {
+       var sorted = [];
+
+       for (var i = 0; i < values.length; i++)
+         if (isFinite(values[i]))
+           sorted.push(values[i]);
+
+       if (!sorted.length)
+         return 0;
+
+       sorted.sort(function(a, b) { return a - b; });
+
+       var half = Math.floor(sorted.length/2);
+
+       return sorted.length % 2 ? sorted[half] : 0.5*(sorted[half - 1] + sorted[half]);
+     }
+
+     function centringWanted() {
+       return $('#centreCheck').is(':checked');
+     }
+
+     /* Folding puts the phase on the horizontal axis, which the diagnostic view
+        needs for itself, so the two cannot both be on. Centring is the other way
+        round: it is what makes a diagnostic readable and means nothing against
+        time, so it only offers itself here. */
+     function updateDiagnosticControls() {
+       var diagnostic = !!diagnosticAxis();
+
+       $('#foldCheck, #twoCycles').prop('disabled', diagnostic);
+       $('#foldCheck, #twoCycles').closest('.form-check')
+         .toggleClass('text-muted', diagnostic);
+
+       $('#centreCheck').prop('disabled', !diagnostic);
+       $('#centreCheck').closest('.form-check')
+         .toggleClass('text-muted', !diagnostic);
+     }
+
+     /* The magnitudes of a band with the median of every camera taken out of
+        them, which is what makes a trend against a diagnostic readable: the
+        cameras sit whole tenths of a magnitude apart, so together they hide a
+        correlation an order of magnitude smaller. Per camera rather than per
+        band for that very reason - their zero points need not agree, and a
+        common median would only shift the cameras onto one another. */
+     function centredMags(lc) {
+       if (!centringWanted())
+         return lc.mags;
+
+       var groups = {};
+
+       for (var i = 0; i < lc.mags.length; i++) {
+         var key = lc.sites[i] + '/' + lc.ccds[i];
+         (groups[key] = groups[key] || []).push(lc.mags[i]);
+       }
+
+       for (var key in groups)
+         groups[key] = median(groups[key]);
+
+       var out = [];
+
+       for (var i = 0; i < lc.mags.length; i++)
+         out.push(lc.mags[i] - groups[lc.sites[i] + '/' + lc.ccds[i]]);
+
+       return out;
      }
 
      /* Folding needs no server at all - the browser already has the time of
@@ -724,14 +838,26 @@
 
      /* One light curve as a Plotly trace */
      function lcTrace(lc, custom, scatter_type) {
-       var pts = foldedPoints(lc.mjds, lc.times, lc.mags, lc.magerrs, custom);
+       var diagnostic = diagnosticAxis();
+       var pts, hovertemplate;
+
+       if (diagnostic) {
+         /* Nothing to fold against a quantity that is not time, and nothing to
+            repeat either, so the points are drawn as they come */
+         pts = {x: diagnostic.values(lc), y: centredMags(lc),
+                err: lc.magerrs, custom: custom};
+         hovertemplate = '%{x:.3f}:<br>%{data.name} mag = %{y:.3f} &plusmn; %{error_y.array:.3f}<br>%{customdata}<extra></extra>';
+       } else {
+         pts = foldedPoints(lc.mjds, lc.times, lc.mags, lc.magerrs, custom);
+         hovertemplate = '%{x}:<br>%{data.name} mag = %{y:.2f} &plusmn; %{error_y.array:.3f}<br>%{customdata}<extra></extra>';
+       }
 
        return Object.assign(pointStyle(lc.color, pts.err, scatter_type), {
          x: pts.x,
          y: pts.y,
          customdata: pts.custom,
          name: lc.filter,
-         hovertemplate: '%{x}:<br>%{data.name} mag = %{y:.2f} &plusmn; %{error_y.array:.3f}<br>%{customdata}<extra></extra>'
+         hovertemplate: hovertemplate
        });
      }
 
@@ -772,7 +898,7 @@
          npoints += window.lcs[i].times.length;
 
        /* The colors share the figure, and so its budget */
-       if (hasColors())
+       if (showColors())
          for (var i = 0; i < window.colors.length; i++)
            npoints += window.colors[i].mjds.length;
 
@@ -790,7 +916,7 @@
 
        /* After the bands, so that the trace numbers of the light curve itself -
           and thus the ones the click handler turns into frames - stay put */
-       if (hasColors())
+       if (showColors())
          for (var i = 0; i < window.colors.length; i++)
            traces.push(colorTrace(window.colors[i], scatter_type));
 
@@ -804,6 +930,12 @@
        return !!(window.colors && window.colors.length);
      }
 
+     /* A color is a quantity of the star against time, so it has nothing to be
+        drawn against a diagnostic of the frames and the panel steps aside */
+     function showColors() {
+       return hasColors() && !diagnosticAxis();
+     }
+
      /* Of the plot, the share taken by the color panel and the gap left above it
         for the magnitude axis to end in */
      var COLOR_PANEL = 0.26, COLOR_GAP = 0.08;
@@ -812,19 +944,31 @@
         come out of the light curve itself */
      var COLOR_PLOT_HEIGHT = 620;
 
-     /* The horizontal axis is the one thing folding changes about the layout */
+     /* The horizontal axis is the one thing folding, and the diagnostic view,
+        change about the layout */
      function lcLayout() {
+       var diagnostic = diagnosticAxis();
        var period = foldingPeriod();
        var layout = Object.assign({}, layout_lc);
 
-       layout.xaxis = period === null
-         ? {title: {text: 'Time, UT'}, automargin: true, showline: true, zeroline: false}
-         : {title: {text: 'Phase of the ' + period + ' d period'}, automargin: true, showline: true, zeroline: false};
+       var xtitle;
+       if (diagnostic)
+         xtitle = diagnostic.label;
+       else if (period === null)
+         xtitle = 'Time, UT';
+       else
+         xtitle = 'Phase of the ' + period + ' d period';
+
+       layout.xaxis = {title: {text: xtitle}, automargin: true, showline: true, zeroline: false};
+
+       if (diagnostic && centringWanted())
+         layout.yaxis = Object.assign({}, layout_lc.yaxis,
+                                      {title: {text: 'Magnitude - median of its camera'}});
 
        /* Two panels stacked on one and the same horizontal axis, which is what
           keeps them in step: there is nothing to synchronize, as zooming, panning
           and folding all act on the single axis both of them are drawn against. */
-       if (hasColors()) {
+       if (showColors()) {
          layout.height = COLOR_PLOT_HEIGHT;
          layout.yaxis = Object.assign({}, layout_lc.yaxis, {domain: [COLOR_PANEL + COLOR_GAP, 1]});
          layout.yaxis2 = {
@@ -945,6 +1089,59 @@
         variability faster than the window, so switch it off when looking for short periods.
       </p>
       <p>
+        <i>Color-aware</i>, off by default, switches to the second calibration the pipeline stores for every
+        measurement. The
+        default magnitude comes from a zero point fitted without a color term, which makes it a compromise over
+        the calibration stars: a star whose color is not theirs picks up an offset that follows the color
+        response of the frame, and as that response differs between the cameras and drifts over the years, the
+        offset shows up as a spurious difference between them and as a slow trend within each. The color-aware
+        magnitude instead takes the zero point fitted alongside a color term and applies that term with the
+        color of the star, removing both. The gain is largest in <i>B</i>, where the color terms are several
+        times larger than in the other bands, and largest for the stars furthest from the mean color of the
+        calibration set; it is a systematic rather than a per-point one, so a single night looks much the same
+        either way while the cameras agree considerably better.
+      </p>
+      <p>
+        The setting names the color to apply it with as well as asking for it at all. <i>B and V pairs</i>
+        takes the color from the star's own pairs of <i>B</i> and <i>V</i> points measured together in the
+        sense described below, corrected for the fact that neither of the two carries its color term yet. That
+        is exact, and agrees between the cameras to a few hundredths, but it needs the star to have been
+        measured in both bands: with fewer than three such pairs there is no color to correct with, and the
+        default magnitude is shown instead, which the plot title says.
+      </p>
+      <p>
+        <i>Fit to color term</i> is the way round that. A star whose magnitude follows the color
+        response of the frames betrays its own color, so the slope of one against the other gives a <i>B-V</i>
+        from a single band. It is much the weaker of the two: measured against the two-band color over a field
+        of stars it scatters by about 0.36 magnitudes, and roughly one star in six comes out further than 0.3
+        from the truth, occasionally by more than a magnitude, without the reported uncertainty giving any
+        warning &mdash; that uncertainty counts the scatter of the points and not the systematics they share.
+        A moderate error costs little, as the color enters multiplied by a color term of a few hundredths, but
+        a wild one is worse than no correction at all. The fitted value and its uncertainty are in the plot
+        title, marked as fitted rather than measured; treat a value far from what the star ought to be as a
+        failure of the fit and put the right one in <i>B-V</i> instead.
+      </p>
+      <p>
+        The <i>B-V</i> field overrides both, and is the honest answer whenever the color is known from
+        elsewhere. The fit is only ever given the cameras and bands that pass the test in the next paragraph,
+        because in a degenerate one it does not fail loudly: there the stored magnitude varies with the color
+        term whatever the star does, so the fit returns the mean color of the calibration stars with a
+        confident-looking uncertainty attached.
+      </p>
+      <p>
+        The decision is then taken separately for every camera and band, because not all of them measure their
+        color term well enough for it to be worth applying. The pipeline fits the zero point of a frame
+        together with its color term, and where the calibration stars are few the two are degenerate: an error
+        in one is taken straight back out by the other, so the stored color-aware magnitude already carries
+        that error and applying the color term leaves it behind rather than removing anything. The narrow field
+        cameras see some fifty calibration stars against the several hundred of a wide field, and their color
+        term accordingly scatters by as much as it varies, so they are left on the default magnitude &mdash; as
+        is any band whose color response hardly moves in the first place. The title says when only some of the
+        cameras were corrected, and the diagnostic view below is where to check it: a corrected camera comes
+        out flat against the color term, and a camera that should not have been corrected slopes the other way
+        by roughly the difference between the color of the star and that of the calibration stars.
+      </p>
+      <p>
         <i>Compute colors</i> adds a second panel below the light curve, sharing its horizontal axis, with the
         <i>B-V</i>, <i>V-R</i>, <i>V-I</i> and <i>R-I</i> colors of the star. A color is the difference of two
         magnitudes measured on different frames, so the two have to be taken close enough in time for the star
@@ -955,6 +1152,19 @@
         difference to be a color of the star rather than one of the instruments. Colors follow the points they
         are made of, so the quality cuts, the clipping and the averaging all reach them, and the hover says how
         far apart the two measurements actually were.
+      </p>
+      <p>
+        <i>Against</i> draws the very same points with something about the frame on the horizontal axis instead
+        of the time &mdash; the color term, the seeing, the scatter of the frame zero point, the number of
+        calibration stars, the reported uncertainty, or how far from the queried position the star was actually
+        detected. A light curve that slopes against one of those is following the instrument rather than the
+        star, which is what tells a spurious trend from a real one: a slope against the color term is the very
+        thing <i>Color-aware</i> removes, and switching it on flattens it. Read that one in <i>B</i>, whose
+        color terms range widely enough over the archive to measure a slope against; in the other bands they
+        barely move, so whatever slope comes out of them is mostly noise.
+        <i>Centre</i> takes the median magnitude of each camera out of its own points beforehand, as the
+        cameras sit tenths of a magnitude apart while the trends being looked for are an order of magnitude
+        smaller. Folding needs the horizontal axis for the phase, so the two views take turns.
       </p>
       <p>
         The result view groups points by filter in an interactive light-curve plot with error bars and hover
@@ -1038,6 +1248,37 @@
     </div>
 
     <div id="periodogramDiv" style="height:300px; display:none;"></div>
+
+    <!-- Debug -->
+    <div class="row g-4 justify-content-center align-items-center mb-4">
+      {% comment %}
+        Draws the very same points against something about the frame they were
+        measured on instead of against time, which is how a trend belonging to
+        the instrument rather than to the star gives itself away.
+      {% endcomment %}
+      <div class="col-auto">
+        <div class="input-group input-group-sm">
+          <span class="input-group-text">Plot magnitude against</span>
+          <select class="form-select" id="diagnosticSelect" title="Plot the magnitudes against a property of the frame they were measured on, to see what they follow besides the star" style="max-width:14rem;">
+            <option value="">Time</option>
+            <option value="color_term">Color term</option>
+            <option value="fwhm">FWHM</option>
+            <option value="std">Frame zero point scatter</option>
+            <option value="nstars">Calibration stars</option>
+            <option value="magerr">Uncertainty</option>
+            <option value="xi">RA offset</option>
+            <option value="eta">Dec offset</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="col-auto">
+        <div class="form-check form-check-inline m-0">
+          <input class="form-check-input" type="checkbox" id="centreCheck" checked disabled>
+          <label class="form-check-label" for="centreCheck" title="Take the median magnitude of every camera out of its points, so that a trend an order of magnitude smaller than the differences between their zero points is not buried under them">Center magnitudes</label>
+        </div>
+      </div>
+    </div>
 
     {% if lc_text %}
       <div>

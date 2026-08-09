@@ -46,13 +46,24 @@ def radectoxieta(ra, dec, ra0=0, dec0=0):
 # How many times a quality cut is re-applied around the updated median
 CLIP_ITERATIONS = 3
 
+# Fewest measurements a camera and band needs before the cuts are taken over its
+# own distribution rather than over a wider one. Below a handful the median
+# absolute deviation says more about the sample size than about the data.
+CLIP_MIN_POINTS = 10
 
-def clip_column(idx, values, side='upper', nsigma=3.0):
+
+def clip_column(idx, values, side='upper', nsigma=3.0, reference=None):
     """Points of `idx` surviving an iterative clip of `values` around its median.
 
     `side` tells which tail goes: `upper` and `lower` reject the large and the
     small values, `both` keeps a symmetric band. The scale is the median absolute
     deviation of the points still selected.
+
+    `reference` gives the points the band is derived from, when they are not the
+    ones being cut. A group of two measurements has no distribution of its own -
+    the deviation of either from their common median is the same, so both are
+    within any multiple of it and nothing is ever rejected - and has to be held
+    to a population large enough to have one.
 
     A column carrying nothing to cut on - all of it missing, or constant, or a
     selection already emptied by an earlier cut - simply leaves the selection
@@ -61,13 +72,19 @@ def clip_column(idx, values, side='upper', nsigma=3.0):
     """
     values = np.asarray(values, dtype=float)
 
+    # Cut against itself unless told otherwise, which is the whole of the
+    # behaviour when no reference is given
+    population = idx if reference is None else reference
+
+    passed = None
+
     for _ in range(CLIP_ITERATIONS):
-        if not np.any(idx):
+        if not np.any(population):
             break
 
         # Checked before taking the median, which warns about an all-NaN slice
         # rather than just returning one
-        selected = values[idx]
+        selected = values[population]
         if not np.any(np.isfinite(selected)):
             break
 
@@ -85,12 +102,12 @@ def clip_column(idx, values, side='upper', nsigma=3.0):
             passed = np.abs(values - median) <= nsigma*sigma
 
         # Nothing left to converge to once a pass rejects nobody
-        if np.sum(idx & passed) == np.sum(idx):
+        if np.sum(population & passed) == np.sum(population):
             break
 
-        idx = idx & passed
+        population = population & passed
 
-    return idx
+    return idx if passed is None else idx & passed
 
 
 def get_lc(params):
@@ -451,19 +468,63 @@ def pair_bands(mjds1, mjds2, window=COLOR_WINDOW):
     return order1[i1[close]], order2[i2[close]]
 
 
+def visit_groups(mjds, filters, sites, ccds, nights, idx):
+    """The measurements of every camera, night and band, and the visits they make.
+
+    Indexing them this way lets the matching below look at one night at a time
+    instead of scanning the whole curve once per band pair it makes.
+    """
+    groups = {}
+    for i in np.where(idx)[0]:
+        groups.setdefault((sites[i], ccds[i], nights[i], filters[i]), []).append(i)
+
+    # Deduplicated rather than sorted, as a night may well be missing and None
+    # does not compare with a string
+    visits = list(dict.fromkeys(_[:3] for _ in groups))
+
+    return groups, visits
+
+
+def match_bands(mjds, groups, visits, f1, f2, window=COLOR_WINDOW):
+    """Indices of the measurements of `f1` and `f2` that were taken together.
+
+    The two are required to belong to the same night of the same camera, and
+    then to be each other's nearest measurement within `window` days. The camera
+    is part of that on purpose: the zero points of two of them need not agree
+    closely enough for their difference to be a color of the star rather than
+    one of the instruments. It costs nothing here, as every camera of the
+    archive carries the whole filter set.
+    """
+    none = np.array([], dtype=int)
+
+    pairs1, pairs2 = [], []
+
+    for visit in visits:
+        sel1 = groups.get(visit + (f1,))
+        sel2 = groups.get(visit + (f2,))
+
+        if not sel1 or not sel2:
+            continue
+
+        sel1, sel2 = np.array(sel1), np.array(sel2)
+        i1, i2 = pair_bands(mjds[sel1], mjds[sel2], window=window)
+
+        pairs1.append(sel1[i1])
+        pairs2.append(sel2[i2])
+
+    if not pairs1:
+        return none, none
+
+    return np.concatenate(pairs1), np.concatenate(pairs2)
+
+
 def compute_colors(data, idx, window=COLOR_WINDOW):
     """Colors of the star, from the measurements of two bands taken together.
 
     A color is the difference of two magnitudes measured on different frames, so
     it only means anything when the two were taken close enough in time for the
-    star not to have moved between them. They are required to belong to the same
-    night of the same camera, and then to be each other's nearest measurement
-    within `window` days.
-
-    The camera is part of that on purpose: the zero points of two of them need
-    not agree closely enough for their difference to be a color of the star
-    rather than one of the instruments. It costs nothing here, as every camera of
-    the archive carries the whole filter set.
+    star not to have moved between them - see `match_bands` for what counts as
+    together.
     """
     mjds = np.asarray(data['mjds'], dtype=float)
     mags = np.asarray(data['mags'], dtype=float)
@@ -475,39 +536,12 @@ def compute_colors(data, idx, window=COLOR_WINDOW):
     # A measurement missing either of these carries nothing to a color
     idx = idx & np.isfinite(mjds) & np.isfinite(mags) & np.isfinite(magerrs)
 
-    # The measurements of every camera, night and band, so that the matching
-    # below looks at one night at a time instead of scanning the whole curve
-    # once per color it makes
-    groups = {}
-    for i in np.where(idx)[0]:
-        groups.setdefault((sites[i], ccds[i], nights[i], filters[i]), []).append(i)
-
-    # Deduplicated rather than sorted, as a night may well be missing and None
-    # does not compare with a string
-    visits = list(dict.fromkeys(_[:3] for _ in groups))
+    groups, visits = visit_groups(mjds, filters, sites, ccds, nights, idx)
 
     colors = []
 
     for f1, f2 in COLOR_PAIRS:
-        pairs1, pairs2 = [], []
-
-        for visit in visits:
-            sel1 = groups.get(visit + (f1,))
-            sel2 = groups.get(visit + (f2,))
-
-            if not sel1 or not sel2:
-                continue
-
-            sel1, sel2 = np.array(sel1), np.array(sel2)
-            i1, i2 = pair_bands(mjds[sel1], mjds[sel2], window=window)
-
-            pairs1.append(sel1[i1])
-            pairs2.append(sel2[i2])
-
-        if not pairs1:
-            continue
-
-        i1, i2 = np.concatenate(pairs1), np.concatenate(pairs2)
+        i1, i2 = match_bands(mjds, groups, visits, f1, f2, window=window)
 
         # Held to the same minimum as a band, and for the same reason
         if len(i1) < MIN_POINTS_PER_FILTER:
@@ -539,6 +573,221 @@ def compute_colors(data, idx, window=COLOR_WINDOW):
     return colors
 
 
+# The bands the color of the star is measured in. It is the color the pipeline
+# fits its color term against, so it is not ours to choose - `extract_photometry`
+# calibrates every band against the B-V of the catalogue.
+BV_BANDS = ('B', 'V')
+
+# Fewest pairs of measurements needed before the color they give is trusted
+BV_MIN_PAIRS = 3
+
+# Smallest `1 - ct_B + ct_V` still inverted below. The color terms are of order
+# a hundredth, so the denominator sits close to one and anything near zero means
+# a spoiled color term rather than a real one.
+BV_MIN_DENOMINATOR = 0.5
+
+
+def estimate_bv(data, idx, window=COLOR_WINDOW):
+    """The B-V of the star, from its own measurements in the two bands.
+
+    `mag_color` is calibrated alongside a color term that the pipeline leaves
+    unapplied, so in a band whose frame has color term `c` it reads
+    `mag_true - (B-V)*c`. The difference of the two bands is therefore
+
+        mag_color(B) - mag_color(V) = (B-V) * (1 - c_B + c_V)
+
+    which needs no more than the two measurements and the two color terms to
+    invert. Only the pairs taken together are used, as with any other color: a
+    star measured in B in one season and in V in another has no color to speak
+    of, and a variable one would give a wrong one rather than a noisy one.
+
+    Returns the color and how many pairs it was taken over, or `(None, 0)` when
+    the star does not carry one.
+    """
+    mjds = np.asarray(data['mjds'], dtype=float)
+    mags = np.asarray(data['mag_color'], dtype=float)
+    cts = np.asarray(data['color_term'], dtype=float)
+    filters = np.asarray(data['filters'])
+    sites, ccds = np.asarray(data['sites']), np.asarray(data['ccds'])
+    nights = np.asarray(data['nights'], dtype=object)
+
+    idx = idx & np.isfinite(mjds) & np.isfinite(mags) & np.isfinite(cts)
+
+    if not np.any(idx):
+        return None, 0
+
+    groups, visits = visit_groups(mjds, filters, sites, ccds, nights, idx)
+    i1, i2 = match_bands(mjds, groups, visits, *BV_BANDS, window=window)
+
+    if len(i1) < BV_MIN_PAIRS:
+        return None, 0
+
+    denominator = 1.0 - cts[i1] + cts[i2]
+    good = denominator > BV_MIN_DENOMINATOR
+
+    if np.sum(good) < BV_MIN_PAIRS:
+        return None, 0
+
+    # A median over the pairs, as a single spoiled frame should not move the
+    # color the whole light curve is then corrected with
+    bv = np.median((mags[i1] - mags[i2])[good]/denominator[good])
+
+    if not np.isfinite(bv):
+        return None, 0
+
+    return float(bv), int(np.sum(good))
+
+
+# Spread of the colors the color term is fitted against. `extract_photometry`
+# calibrates on the catalogue stars with 0.2 < B-V < 1.2, so this is roughly the
+# standard deviation of that interval - the lever arm of the fit.
+CAL_COLOR_SPREAD = 0.29
+
+# How much more the color term has to vary over a light curve than one frame can
+# measure it to before it is applied per frame. Chosen from the cameras of the
+# archive rather than from theory: the wide fields come out at 2.5 to 3.5 and
+# gain from the correction, while cta-n/C0 sits at 1.1 to 1.2 and loses by it.
+COLOR_TERM_MIN_SIGNIFICANCE = 2.0
+
+# Fewest measurements a camera and band needs before the judgement below is
+# trusted. A handful of points says nothing about how the color term varies.
+COLOR_TERM_MIN_POINTS = 5
+
+
+def color_term_significance(color_term, std, nstars):
+    """How much the color term varies against how well one frame measures it.
+
+    The pipeline fits the zero point of a frame and its color term together, and
+    where the calibration stars are few the two are degenerate: an error in the
+    color term is taken straight back out by the zero point. `mag_color` then
+    carries `d(ct)*(B-V - <B-V>_cal)`, and applying the color term to it leaves
+    that error in the light curve instead of removing anything - as a slope
+    against the color term of about `B-V - <B-V>_cal`, which for a blue star is
+    half a magnitude. Nothing downstream can undo it, as the error sits in the
+    stored magnitude rather than in what is added to it.
+
+    The color term is fitted against the colors of the calibration stars, so one
+    frame pins it to about `std/(sqrt(nstars)*CAL_COLOR_SPREAD)`. Against that,
+    how much it actually varies over the light curve tells a real color response
+    worth correcting for from the noise of a degenerate fit.
+
+    Returns the ratio of the two, or 0 when it cannot be formed at all.
+    """
+    color_term = np.asarray(color_term, dtype=float)
+    std = np.asarray(std, dtype=float)
+    nstars = np.asarray(nstars, dtype=float)
+
+    good = np.isfinite(std) & np.isfinite(nstars) & (nstars > 0)
+
+    if len(color_term) < COLOR_TERM_MIN_POINTS or not np.any(good):
+        return 0.0
+
+    # Of a single frame, taken as the typical one of the group
+    sigma = np.median(std[good]/(np.sqrt(nstars[good])*CAL_COLOR_SPREAD))
+
+    spread = np.std(color_term[np.isfinite(color_term)])
+
+    if not np.isfinite(sigma) or sigma <= 0 or not np.isfinite(spread):
+        return 0.0
+
+    return float(spread/sigma)
+
+
+# Fewest points, beyond one per group for the offsets, that the regression below
+# needs before it is attempted at all
+BV_FIT_MIN_POINTS = 20
+
+
+def regress_bv(mag_color, color_term, groups, niter=3):
+    """The color of the star from the slope of its magnitude against the color term.
+
+    The other way of getting at the color, and the one favor2ext uses: with
+    `mag_color = offset - (B-V)*ct`, a star whose magnitude follows the color
+    response of the frames betrays its own color, and one band is enough. It is
+    what the archive has for a star it never measured in both B and V.
+
+    One slope is shared by every camera and band, each with a zero point of its
+    own, so that they reinforce the fit rather than their differences entering
+    it. Deviating points are clipped, as the variability of the star is noise
+    here and a flare would otherwise drag the slope with it.
+
+    Meant to be given only the groups whose color term is worth applying at all
+    (see `color_term_significance`). In a degenerate group the fit is not merely
+    noisy but wrong in a way that looks convincing: `mag_color` there varies as
+    `-<B-V>_cal*ct` whatever the star does, so the slope returns the mean color
+    of the calibration stars with a small formal error to go with it.
+
+    Returns the color, the formal error of the slope and how many points were
+    used. That error is a lower bound on how wrong the color may be - it counts
+    the scatter of the points and not the systematics they share.
+    """
+    mag_color = np.asarray(mag_color, dtype=float)
+    color_term = np.asarray(color_term, dtype=float)
+
+    names = sorted(set(groups))
+
+    good = np.isfinite(mag_color) & np.isfinite(color_term)
+
+    if np.sum(good) < len(names) + BV_FIT_MIN_POINTS:
+        return None, None, 0
+
+    # A column per group for its zero point, and one shared column for the slope
+    index = {g: i for i, g in enumerate(names)}
+    X = np.zeros((len(mag_color), len(names) + 1))
+    for i, g in enumerate(groups):
+        X[i, index[g]] = 1.0
+    X[:, -1] = color_term
+
+    for _ in range(niter):
+        C = np.linalg.lstsq(X[good], mag_color[good], rcond=None)[0]
+        resid = mag_color - X.dot(C)
+        scale = mad_std(resid[good])
+
+        if not np.isfinite(scale) or scale <= 0:
+            break
+
+        passed = good & (np.abs(resid) < 3.0*scale)
+
+        if np.sum(passed) < len(names) + BV_FIT_MIN_POINTS:
+            break
+
+        good = passed
+
+    C = np.linalg.lstsq(X[good], mag_color[good], rcond=None)[0]
+    resid = (mag_color - X.dot(C))[good]
+
+    dof = max(int(np.sum(good)) - len(names) - 1, 1)
+
+    try:
+        cov = np.linalg.inv(X[good].T.dot(X[good]))
+        err = float(np.sqrt(np.sum(resid**2)/dof*cov[-1, -1]))
+    except np.linalg.LinAlgError:
+        return None, None, 0
+
+    bv = -C[-1]
+
+    if not np.isfinite(bv) or not np.isfinite(err):
+        return None, None, 0
+
+    return float(bv), err, int(np.sum(good))
+
+
+def color_aware_mags(mag_color, color_term, bv):
+    """The magnitude with the color term of every frame applied.
+
+    stdpipe defines the instrumental system as `obj_mag = cat_mag - color *
+    color_term`, so the calibrated magnitude of a star of color `bv` is its
+    `mag_color` plus that color times the color term of the frame it was
+    measured on.
+    """
+    mag_color = np.asarray(mag_color, dtype=float)
+    color_term = np.asarray(color_term, dtype=float)
+
+    # A measurement missing the color term keeps whatever mag_color says, which
+    # is the best that can be done for it
+    return mag_color + bv*np.nan_to_num(color_term)
+
+
 # The query parameters the data themselves depend on. Everything else - the
 # resolved name, the plot size, the output mode - only affects the presentation,
 # so it must not take part in the cache key below.
@@ -546,6 +795,7 @@ LC_PARAMS = [
     'ra', 'dec', 'sr', 'night', 'night1', 'night2', 'site', 'ccd', 'filter',
     'magerr', 'nstars', 'nofiltering', 'sigma',
     'average', 'average_window', 'average_mode',
+    'color_aware', 'bv',
 ]
 
 LC_CACHE_TIMEOUT = 600
@@ -613,6 +863,7 @@ def build_lc(params):
         stds = col('std')
         nstars = col('nstars')
         color_term = col('color_term')
+        mag_color = col('mag_color')
         zp_std = col('zp_std')
         final_frac = col('final_frac')
         # Object arrays, as either column may be NULL for a measurement whose
@@ -620,13 +871,21 @@ def build_lc(params):
         image_ids = col('image_id', dtype=object)
         nights = col('night', dtype=object)
     else:
-        times = sites = ccds = filters = ras = decs = mags = magerrs = flags = fwhms = stds = nstars = color_term = zp_std = final_frac = image_ids = nights = np.array([])
+        times = sites = ccds = filters = ras = decs = mags = magerrs = flags = fwhms = stds = nstars = color_term = mag_color = zp_std = final_frac = image_ids = nights = np.array([])
 
     mjds = Time(times).mjd if len(times) else []
 
     cols = np.array([{'B':'blue', 'V':'green', 'R':'red', 'I':'orange', 'z':'magenta'}.get(_, 'black') for _ in filters])
 
     filtering = not params.get('nofiltering')
+
+    # The camera a measurement was made on, together with its band. Every cut and
+    # every correction below is decided within one of these: the cameras of the
+    # archive share neither a pixel scale, nor a depth of calibration, nor a zero
+    # point, so a quantity of one of them says nothing about another.
+    groups = np.array(['%s/%s/%s' % (s, c, f)
+                       for s, c, f in zip(sites, ccds, filters)])
+    cameras = np.array(['%s/%s' % (s, c) for s, c in zip(sites, ccds)])
 
     # Quality cuts
     idx0 = np.ones_like(mags, dtype=bool)
@@ -635,18 +894,124 @@ def build_lc(params):
 
         idx0 &= flags < 2
 
-        for fn in np.unique(filters):
-            idx = idx0 & (filters == fn)
+        # Per camera as well as per band. Clipping a band as a whole compares
+        # every camera against the distribution of whichever contributed the most
+        # measurements: the narrow fields have their own pixel scale, so their
+        # FWHM belongs to a different distribution entirely, and their color term
+        # is measured from far fewer stars and scatters accordingly. On a star
+        # seen by both cta-n cameras that used to leave one measurement of the
+        # 542 the wide field took in R, the rest rejected for not looking like
+        # the narrow field.
+        for g in np.unique(groups):
+            idx = idx0 & (groups == g)
 
-            idx = clip_column(idx, stds, 'upper')
-            idx = clip_column(idx, fwhms, 'upper')
-            idx = clip_column(idx, color_term, 'both')
-            idx = clip_column(idx, zp_std, 'upper')
-            idx = clip_column(idx, final_frac, 'lower')
+            # A camera and band that took only a handful of measurements cannot
+            # say what its own distribution is, so it is held to the narrowest
+            # population that can: the rest of the same camera, whose pixel scale
+            # and calibration depth at least still apply, and failing that the
+            # band across the archive. Without the fallback a pair of frames
+            # passes every cut by construction, however wrong they are - which is
+            # how two measurements with a color term of 1.9, twenty times the
+            # usual, used to reach the plot.
+            reference = None
+            if np.sum(idx) < CLIP_MIN_POINTS:
+                camera = idx0 & (cameras == g.rsplit('/', 1)[0])
+                band = idx0 & (filters == g.rsplit('/', 1)[1])
+
+                reference = camera if np.sum(camera) >= CLIP_MIN_POINTS else band
+
+            idx = clip_column(idx, stds, 'upper', reference=reference)
+            idx = clip_column(idx, fwhms, 'upper', reference=reference)
+            idx = clip_column(idx, color_term, 'both', reference=reference)
+            idx = clip_column(idx, zp_std, 'upper', reference=reference)
+            idx = clip_column(idx, final_frac, 'lower', reference=reference)
 
             mask |= idx
 
         idx0 = mask
+
+    # Optionally swap the color-independent magnitude for the color-aware one,
+    # which is the same measurement calibrated against a zero point fitted
+    # alongside a color term, plus that color term times the color of the star.
+    # Applied here, to the points the cuts left, so that the color is taken over
+    # the good measurements and everything below - the clipping, the averaging,
+    # the colors, the period search - sees the corrected magnitudes.
+    #
+    # The gain is mostly in the agreement between the cameras, whose color terms
+    # differ and drift over the years: the color-independent zero point is a
+    # compromise over the calibration stars, so a star whose color is not theirs
+    # picks up a different offset on every camera and every season.
+    # One parameter carries both whether to correct and where the color for it
+    # comes from: `pairs` measures it from the star's own B and V, which is exact
+    # where the star has both, and `fit` recovers it from how the magnitude
+    # follows the color term, which needs one band only and is the weaker of the
+    # two by a long way - see `regress_bv`. Anything else asking for it at all
+    # means the default source.
+    wanted_source = str(params.get('color_aware') or '').lower()
+    color_aware = bool(wanted_source)
+
+    if wanted_source != 'fit':
+        wanted_source = 'pairs'
+
+    # Which cameras and bands support the correction at all, decided before any
+    # color is looked for: it is their calibration that either supports it or
+    # does not - see `color_term_significance` - and the color is then measured
+    # over the very groups it is going to be applied to. A camera whose color
+    # term is no better determined than it varies keeps the plain magnitude
+    # rather than having the noise of a degenerate fit applied to it, which on
+    # the narrow fields is what the correction would amount to.
+    color_significance = {}
+
+    if color_aware and np.any(idx0):
+        for g in np.unique(groups[idx0]):
+            sel = idx0 & (groups == g)
+            color_significance[str(g)] = color_term_significance(
+                color_term[sel], stds[sel], nstars[sel])
+
+    color_groups = sorted(g for g, s in color_significance.items()
+                          if s >= COLOR_TERM_MIN_SIGNIFICANCE)
+
+    usable = np.isin(groups, color_groups) & idx0 if color_groups \
+        else np.zeros_like(idx0)
+
+    try:
+        bv = float(params['bv']) if params.get('bv') not in (None, '') else None
+    except (TypeError, ValueError):
+        bv = None
+
+    if bv is not None and not np.isfinite(bv):
+        bv = None
+
+    bv_forced = bv is not None
+    bv_pairs = 0
+    bv_error = None
+    bv_source = 'given' if bv_forced else None
+
+    if color_aware and not bv_forced and np.any(usable):
+        if wanted_source == 'fit':
+            bv, bv_error, bv_pairs = regress_bv(
+                mag_color[usable], color_term[usable], groups[usable])
+            bv_source = 'fit' if bv is not None else None
+        else:
+            bv, bv_pairs = estimate_bv({
+                'mjds': mjds, 'mag_color': mag_color, 'color_term': color_term,
+                'filters': filters, 'sites': sites, 'ccds': ccds, 'nights': nights,
+            }, idx0)
+            bv_source = 'pairs' if bv is not None else None
+
+    # Without a color there is nothing to apply, and `mag_color` on its own is
+    # no better than the magnitude shown by default, so fall back to that one.
+    # The request is reported separately from what came of it, so that a star
+    # carrying no color says so instead of quietly showing the default curve.
+    # A plain bool rather than whatever numpy makes of the conjunction, as it
+    # both travels to the browser as JSON and is compared by identity in tests
+    color_applied = bool(color_aware and bv is not None and np.any(usable))
+
+    if color_applied:
+        # Every measurement of a group that took the correction, not only the
+        # ones passing the cuts, so that the columns stay of one kind throughout
+        mags = np.where(np.isin(groups, color_groups),
+                        color_aware_mags(mag_color, color_term, bv), mags)
 
     # Optional clipping of the magnitudes themselves, off unless asked for. It is
     # kept apart from the cuts above on purpose: those reject the measurements
@@ -731,6 +1096,13 @@ def build_lc(params):
         'sigma': sigma,
         'npoints': npoints, 'averaging': averaging,
         'average_window': average_window, 'average_mode': average_mode,
+        # `color_source` is what was asked for, `bv_source` where the color
+        # actually came from - which is `given` whenever B-V was supplied by hand
+        'color_aware': color_aware, 'color_source': wanted_source if color_aware else None,
+        'color_applied': color_applied,
+        'bv': bv, 'bv_forced': bv_forced, 'bv_pairs': bv_pairs,
+        'bv_source': bv_source, 'bv_error': bv_error,
+        'color_groups': color_groups, 'color_significance': color_significance,
         'times': times, 'mjds': np.asarray(mjds), 'sites': sites, 'ccds': ccds,
         'filters': filters, 'cols': cols, 'ras': ras, 'decs': decs,
         'mags': mags, 'magerrs': magerrs, 'flags': flags, 'fwhms': fwhms,
@@ -936,6 +1308,33 @@ def lc(request, mode="jpg", size=800):
     if data['sigma'] > 0:
         title += ' - clipped at %g sigma' % data['sigma']
 
+    # Which magnitude is being drawn, and the color it was corrected with. A
+    # request that found no color says so rather than passing for a correction
+    # that never happened.
+    if data['color_applied']:
+        title += ' - color-aware, B-V = %.3f' % data['bv']
+
+        # Where the color came from matters as much as its value: the one fitted
+        # to the color term is far weaker than the one measured from two bands,
+        # so it is never allowed to read as though it had been measured
+        if data['bv_source'] == 'given':
+            title += ' (given)'
+        elif data['bv_source'] == 'fit':
+            title += ' +/- %.3f (fitted, not measured)' % (data['bv_error'] or 0)
+
+        # A camera whose color term is not measured well enough to apply keeps
+        # the plain magnitude, so say when the curve is a mixture of the two
+        declined = len(data['color_significance']) - len(data['color_groups'])
+        if declined:
+            title += ' (%d of %d cameras and bands)' % (
+                len(data['color_groups']), len(data['color_significance']))
+    elif data['color_aware'] and not data['color_groups']:
+        title += ' - color-aware declined, color term too poorly measured'
+    elif data['color_source'] == 'fit':
+        title += ' - color-aware unavailable, too few points to fit a color'
+    elif data['color_aware']:
+        title += ' - color-aware unavailable, no paired %s-%s' % BV_BANDS
+
     if data['averaging']:
         title += ' - %s over %.0f s' % (
             {'median': 'median', 'clipped': 'clipped mean'}.get(data['average_mode'], 'averaged'),
@@ -975,6 +1374,14 @@ def lc(request, mode="jpg", size=800):
     elif mode == 'json':
         lcs = []
 
+        # `np.float64` is a subclass of `float` and so serializes as a number on
+        # its own, while `np.int64` is not a subclass of anything the encoder
+        # knows and would silently reach the `default=str` below instead. A
+        # column arriving as strings makes a categorical axis of itself in the
+        # plot, so the integer ones are cast rather than left to chance.
+        def numbers(values):
+            return [float(_) for _ in values]
+
         for fn in np.unique(filters):
             idx = idx0 & (filters == fn)
 
@@ -990,8 +1397,10 @@ def lc(request, mode="jpg", size=800):
                         # catalogue position, so the two differ by a pixel or two.
                         'ras': list(ras[idx]), 'decs': list(decs[idx]),
                         'times': times_idx, 'mjds': list(mjds[idx]), 'xi': list(xi[idx]), 'eta': list(eta[idx]),
-                        'mags': list(mags[idx]), 'magerrs': list(magerrs[idx]), 'flags': list(flags[idx]),
-                        'fwhms': list(fwhms[idx]), 'stds': list(stds[idx]), 'nstars': list(nstars[idx]),
+                        'mags': list(mags[idx]), 'magerrs': list(magerrs[idx]),
+                        'flags': numbers(flags[idx]),
+                        'fwhms': list(fwhms[idx]), 'stds': list(stds[idx]),
+                        'nstars': numbers(nstars[idx]),
                         'sites': list(sites[idx]), 'ccds': list(ccds[idx]), 'color_term': list(color_term[idx]),
                         'image_ids': [None if _ is None else int(_) for _ in image_ids[idx]],
                         'nights': list(nights[idx]),
@@ -1004,7 +1413,20 @@ def lc(request, mode="jpg", size=800):
             colors = compute_colors(data, displayed_mask(filters, idx0))
 
         data = {'name': name, 'title': title, 'ra': ra, 'dec': dec, 'sr': sr,
-                'lcs': lcs, 'colors': colors}
+                'lcs': lcs, 'colors': colors,
+                # The color is reported only when it actually reached the
+                # magnitudes, so that a client need not repeat the conditions
+                # under which it does
+                'color_aware': data['color_applied'],
+                'bv': data['bv'] if data['color_applied'] else None,
+                'bv_forced': data['bv_forced'], 'bv_pairs': data['bv_pairs'],
+                'bv_source': data['bv_source'] if data['color_applied'] else None,
+                'bv_error': data['bv_error'],
+                # Which cameras and bands took the correction, and how well each
+                # of them measures its color term - the diagnostic view is where
+                # a refusal is checked, so the numbers behind it travel with it
+                'color_groups': data['color_groups'],
+                'color_significance': data['color_significance']}
 
         return HttpResponse(json.dumps(data, default=str), content_type="application/json")
 
@@ -1012,6 +1434,9 @@ def lc(request, mode="jpg", size=800):
         response = HttpResponse(request, content_type='text/plain')
 
         response['Content-Disposition'] = 'attachment; filename=lc_full_%s_%s_%s.txt' % (ra, dec, sr)
+
+        if data['color_applied']:
+            print('# Mag = MagColor + %.4f*ColorTerm' % data['bv'], file=response)
 
         print('# Date Time MJD Site CCD Filter Mag Magerr Flags FWHM Std Nstars', file=response)
 
@@ -1029,6 +1454,9 @@ def lc(request, mode="jpg", size=800):
             single = True
         else:
             single = False
+
+        if data['color_applied']:
+            print('# Mag = MagColor + %.4f*ColorTerm' % data['bv'], file=response)
 
         if single:
             print('# MJD Mag Magerr', file=response)

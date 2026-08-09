@@ -166,7 +166,7 @@ pytest tests/performance/test_endpoint_performance.py -v # Response time tests
 - **Query Efficiency** (`test_query_efficiency.py`): Validates query counts, checks for N+1 patterns, tests spatial queries
 - **Endpoint Performance** (`test_endpoint_performance.py`): Validates response time thresholds for fast (<500ms), medium (0.5-2s), and expensive (1-5s) endpoints
 
-**Current Status:** 45/47 tests passing (96%)
+**Current Status:** 99/101 tests passing (98%)
 - The two failures are genuine, and are left failing on purpose. Both are one expensive query and nothing else: `/nights/` aggregates the whole `images` table to count every night of every site, which takes seconds on a cold cache and is then held for an hour by `cache_page`, and the cutouts list pays a q3c `COUNT(*)` of the cone before it can lay out its pages. Neither is fixable in the application - they want a summary table and a better spatial index respectively.
 - Query counts of the views are asserted with `database='fram'`, so that the session and user rows the authenticated test client reads from the default database do not count against them.
 - `assert_query_count` yields a record which holds `count` and `queries` once the block is over, for a test comparing two of them rather than pinning a number.
@@ -261,6 +261,27 @@ The logging configuration filters out `PermissionDenied` exceptions (see `utils.
 
 ### Form Handling with Astronomical Coordinates
 The `ImagesSearchForm` accepts coordinates or object names via the `coords` field. Name resolution is handled by `fram.resolve.resolve()` which returns name, RA, and Dec.
+
+### Quality Cuts Are Per Camera
+`build_lc()` clips `std`, `fwhm`, `color_term`, `zp_std` and `final_frac` within each (site, ccd, filter) group, not per filter. The cameras share neither a pixel scale nor a calibration depth, so a band-wide clip compares every camera against whichever contributed the most measurements - on HD 7252 that left 1 of the 542 cta-n/WF0 R points, rejected for not resembling the far more numerous C0 ones.
+
+A group below `CLIP_MIN_POINTS` has no distribution of its own - the deviation of either member of a pair from their common median is the same, so both survive any multiple of it - and is cut against `clip_column`'s `reference` instead: the rest of its camera, or failing that the band across the archive. Without it PY Gem kept two auger/WF4 B frames whose color term was 1.9, twenty times the usual.
+
+### Color-aware Photometry
+The pipeline calibrates every measurement twice: `mag` from a zero point fitted without a color term, and `mag_color` from one fitted alongside a color term that is stored separately in `color_term` and left unapplied. stdpipe's convention is `mag_calibrated = mag_instrumental + color * color_term`, so the color-aware magnitude is `mag_color + (B-V)*color_term`.
+
+Off by default. One query parameter carries both the request and the source of the color: `color_aware=pairs` measures it from the star's own paired B and V points, inverting `mag_color(B) - mag_color(V) = (B-V)*(1 - ct_B + ct_V)` (see `estimate_bv()`); anything else truthy means the same. `bv` overrides it. A star with no color falls back to `mag`, which the caption says; `mag_color` on its own is no better than `mag`, so it is never shown uncorrected.
+
+`color_aware=fit` swaps the two-band color for `regress_bv()`, the favor2ext approach: one slope of `mag_color` against `color_term` shared by every group, with a zero point per group. It works from a single band, which is its whole point, but it is far weaker - rms 0.36 against the two-band color over a field of 41 stars, about one in six beyond 0.3 and occasionally beyond a magnitude, and the formal error does not flag the failures (they sit at 5-9 sigma). Detrending in time makes it worse, not better: the long-baseline drift of the color term is where most of the signal is. Hence an explicit choice rather than an automatic fallback, and the title marks the value "fitted, not measured". The fit is only ever given the groups that pass the significance gate - in a degenerate group it returns `<B-V>_cal` with a small formal error, which is a wrong answer that looks like a good one.
+
+The gain is systematic rather than per-point: it is largest in B, whose color terms are several times larger than the other bands', and shows mostly as better agreement between the cameras, whose color terms differ and drift over the years.
+
+**The correction is decided per camera and band, not for the light curve as a whole.** The pipeline fits a frame's zero point and its color term together, so where the calibration stars are few the two are degenerate and their errors cancel: `mag_color` then carries `d(ct)*(B-V - <B-V>_cal)`, and applying the color term leaves that behind as a slope of about `B-V - 0.6` against the color term. Nothing downstream can undo it - the error is in the stored magnitude, not in what is added to it. `color_term_significance()` compares how much the color term varies over the curve with how well one frame measures it (`std/(sqrt(nstars)*CAL_COLOR_SPREAD)`); below `COLOR_TERM_MIN_SIGNIFICANCE` the group keeps the plain `mag`. Wide fields come out at 2.5-3.5, cta-n/C0 (about 50 calibration stars) at 1.0-1.4. A forced `bv` does not bypass this - the gate is about the frames, not the star.
+
+### Diagnostic View
+The *Against* select beside the folding controls redraws the light curve with a property of the frame on the horizontal axis instead of the time (color term, FWHM, frame zero point scatter, calibration stars, uncertainty, position offset). Entirely client-side - every column is already in the light curve JSON - so switching costs no request. *Centre* subtracts the median magnitude of each camera, without which the differences between their zero points bury any trend. Folding and the diagnostic view both want the horizontal axis, so selecting one disables the other, and the color panel steps aside since a color has nothing to be drawn against a property of the frames.
+
+Anything the plot may put on an axis has to reach the JSON as a number: `np.float64` subclasses `float` and serializes on its own, while `np.int64` does not and would fall through to `json.dumps(default=str)`, turning that axis categorical. See `numbers()` in the `json` branch of `lc()`.
 
 ### Search Radius Units
 Search forms accept radius with selectable units (degrees, arcmin, arcsec) that are normalized to degrees before database queries.

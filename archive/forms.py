@@ -84,6 +84,33 @@ class ImagesSearchForm(forms.Form):
         })
     )
 
+    # Whether to use the magnitudes calibrated with a color term, and where the
+    # color to apply it with comes from - one question rather than two, as the
+    # second is meaningless without the first
+    color_aware = forms.ChoiceField(
+        choices=[
+            ('', 'Off'),
+            ('pairs', 'B and V pairs'),
+            ('fit', 'Fit to color term'),
+        ],
+        required=False, label="Color-aware",
+        widget=forms.Select(attrs={
+            'title': 'Apply the color term of every frame with the color of the star. The B '
+                     'and V pairs of the star measure that color exactly but need both bands; '
+                     'fitting the magnitude against the color term needs one band only, and is '
+                     'far less reliable - check the value it reports.',
+        })
+    )
+
+    bv = forms.FloatField(
+        required=False, label="B-V",
+        widget=forms.NumberInput(attrs={
+            'placeholder': 'Auto',
+            'title': 'Color to apply the color term with, overriding the one the light curve '
+                     'gives. Needed for a star observed in a single band.',
+        })
+    )
+
     sigma = forms.FloatField(
         min_value=0, required=False, label="Clip, sigma",
         widget=forms.NumberInput(attrs={
@@ -154,10 +181,12 @@ class ImagesSearchForm(forms.Form):
                 css_class='align-items-end',
             ),
             Row(
-                Column('colors', css_class="col-md mb-2"),
+                Column('colors', css_class="col-md-auto mb-2"),
+                Column('color_aware', css_class='col-md'),
+                Column('bv', css_class='col-md'),
                 Column('average', css_class='col-md-auto mb-2'),
-                Column('average_mode', css_class='col-md-auto'),
-                Column('average_window', css_class='col-md-auto'),
+                Column('average_mode', css_class='col-md'),
+                Column('average_window', css_class='col-md'),
                 css_class='align-items-end',
             ) if mode == 'photometry' else None,
             Row(
